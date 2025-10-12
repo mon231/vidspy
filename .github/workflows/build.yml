@@ -14,7 +14,7 @@ jobs:
           java-version: '21'
 
       - name: Build APK
-        run: ./gradlew build
+        run: bash ./gradlew build
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

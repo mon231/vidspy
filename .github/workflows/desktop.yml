@@ -1,0 +1,49 @@
+name: Build vidspy desktop
+on: push
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: vidspy-linux
+            sep: ':'
+            icon: ''
+          - os: windows-latest
+            artifact: vidspy-windows
+            sep: ';'
+            icon: '--icon assets/icon.ico'
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r desktop/requirements.txt pytest pyinstaller
+
+      - name: Backend tests
+        run: python -m pytest tests -q
+
+      - name: Build single-file executable (no console)
+        run: >
+          pyinstaller desktop/app.py
+          --onefile --noconsole --name vidspy
+          --paths backend
+          --add-data "desktop/web${{ matrix.sep }}web"
+          --collect-data eel
+          ${{ matrix.icon }}
+          --collect-submodules yt_dlp --collect-submodules gallery_dl
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/vidspy*

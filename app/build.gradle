@@ -20,8 +20,13 @@ android {
             abiFilters "arm64-v8a"
         }
         python {
+            version "3.11"
             pip {
                 install "yt-dlp"
+                install "gallery-dl"
+                install "requests"
+                install "beautifulsoup4"
+                install "m3u8"
             }
         }
     }
@@ -31,6 +36,10 @@ android {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
+    }
+    sourceSets {
+        // Shared Python package, also used by the desktop app (see /backend)
+        main.python.srcDir "../backend"
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8

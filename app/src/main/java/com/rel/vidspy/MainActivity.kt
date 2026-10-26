@@ -1,174 +1,300 @@
 package com.rel.vidspy
 
+import android.Manifest
+import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
+import android.media.MediaPlayer
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.view.View
+import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ImageView
+import android.widget.ProgressBar
+import android.widget.TextView
 import android.widget.Toast
 import android.widget.VideoView
 import androidx.appcompat.app.AppCompatActivity
-import com.chaquo.python.PyException
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 class MainActivity : AppCompatActivity() {
+    private val job = SupervisorJob()
+    private val scope = CoroutineScope(Dispatchers.Main + job)
+    private lateinit var backend: Backend
+    private lateinit var cacheRoot: File
+
+    private lateinit var etUrl: EditText
+    private lateinit var tvInfo: TextView
+    private lateinit var tvCounter: TextView
+    private lateinit var progress: ProgressBar
     private lateinit var videoView: VideoView
-    private lateinit var btnPlay: Button
-    private lateinit var btnPause: Button
-    private lateinit var btnStop: Button
+    private lateinit var imageView: ImageView
+    private lateinit var navLayout: View
+    private lateinit var controlLayout: View
+    private lateinit var downloadLayout: View
     private lateinit var btnMute: Button
-    private var currentVideoFile: File? = null
+
+    private var post: ResolvedPost? = null
+    private var index = 0
+    private var mediaPlayer: MediaPlayer? = null
     private var isMuted = false
-    private var originalVolume = 1.0f
+    private var showJob: Job? = null
+    private var pendingSave: (() -> Unit)? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        if (! Python.isStarted()) {
-            Python.start(AndroidPlatform(this))
-        }
+        if (!Python.isStarted()) Python.start(AndroidPlatform(this))
+        backend = Backend()
+        cacheRoot = File(cacheDir, "vidspy").apply { deleteRecursively(); mkdirs() }
 
-        val py = Python.getInstance()
-        val module = py.getModule("vidspylogic")
-
-        // Initialize views
+        etUrl = findViewById(R.id.etX)
+        tvInfo = findViewById(R.id.tvInfo)
+        tvCounter = findViewById(R.id.tvCounter)
+        progress = findViewById(R.id.progress)
         videoView = findViewById(R.id.videoView)
-        btnPlay = findViewById(R.id.btnPlay)
-        btnPause = findViewById(R.id.btnPause)
-        btnStop = findViewById(R.id.btnStop)
+        imageView = findViewById(R.id.imageView)
+        navLayout = findViewById(R.id.navLayout)
+        controlLayout = findViewById(R.id.controlLayout)
+        downloadLayout = findViewById(R.id.downloadLayout)
         btnMute = findViewById(R.id.btnMute)
 
-        // Set up control button listeners
-        setupControlButtons()
+        findViewById<Button>(R.id.button).setOnClickListener { fetch() }
+        findViewById<Button>(R.id.btnPaste).setOnClickListener { paste() }
+        findViewById<Button>(R.id.btnPrev).setOnClickListener { step(-1) }
+        findViewById<Button>(R.id.btnNext).setOnClickListener { step(1) }
+        findViewById<Button>(R.id.btnDownload).setOnClickListener { downloadCurrent() }
+        findViewById<Button>(R.id.btnDownloadAll).setOnClickListener { downloadAll() }
+        etUrl.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_GO) { fetch(); true } else false
+        }
+        setupControls()
+        handleShareIntent(intent)
+    }
 
-        findViewById<Button>(R.id.button).setOnClickListener {
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        handleShareIntent(intent)
+    }
+
+    private fun handleShareIntent(intent: Intent?) {
+        if (intent?.action == Intent.ACTION_SEND) {
+            intent.getStringExtra(Intent.EXTRA_TEXT)?.let {
+                etUrl.setText(it)
+                fetch()
+            }
+        }
+    }
+
+    private fun paste() {
+        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val text = cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)
+        if (!text.isNullOrBlank()) etUrl.setText(text)
+    }
+
+    // ---- resolve -----------------------------------------------------------------------------
+
+    private fun fetch() {
+        val text = etUrl.text.toString()
+        if (text.isBlank()) return toast("Please enter a link")
+        (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
+            .hideSoftInputFromWindow(etUrl.windowToken, 0)
+
+        setBusy(true)
+        scope.launch {
             try {
-                val url = findViewById<EditText>(R.id.etX).text.toString()
-                if (url.isBlank()) {
-                    Toast.makeText(this, "Please enter a URL", Toast.LENGTH_SHORT).show()
-                    return@setOnClickListener
-                }
+                val resolved = withContext(Dispatchers.IO) { backend.resolve(text) }
+                post = resolved
+                index = 0
+                downloadLayout.visibility = View.VISIBLE
+                show()
+            } catch (e: Exception) {
+                toast(errorText(e), long = true)
+                setBusy(false)
+            }
+        }
+    }
 
-                // Show loading message
-                Toast.makeText(this, "Downloading video...", Toast.LENGTH_SHORT).show()
+    // ---- viewer ------------------------------------------------------------------------------
 
-                // Hide keyboard
-                currentFocus?.let {
-                    (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
-                        .hideSoftInputFromWindow(it.windowToken, 0)
-                }
+    private fun show() {
+        val p = post ?: return
+        val item = p.items[index]
+        showJob?.cancel()
+        stopVideo()
+        imageView.visibility = View.GONE
+        videoView.visibility = View.GONE
+        controlLayout.visibility = View.GONE
+        navLayout.visibility = if (p.items.size > 1) View.VISIBLE else View.GONE
+        tvCounter.text = "${index + 1} / ${p.items.size}"
+        tvInfo.text = "${p.platform} · ${item.title}"
+        setBusy(true)
 
-                // Download video in background thread
-                CoroutineScope(Dispatchers.IO).launch {
+        showJob = scope.launch {
+            try {
+                if (item.type == MediaType.VIDEO) playVideo(item) else showImage(item)
+            } catch (e: Exception) {
+                toast(errorText(e), long = true)
+                setBusy(false)
+            }
+        }
+    }
+
+    /** Direct watch: stream the CDN url. If the player rejects it, fall back to a cached download. */
+    private fun playVideo(item: MediaItem, fromCache: File? = null) {
+        videoView.visibility = View.VISIBLE
+        controlLayout.visibility = View.VISIBLE
+        videoView.setOnPreparedListener { mp ->
+            mediaPlayer = mp
+            applyMute()
+            setBusy(false)
+            videoView.start()
+        }
+        videoView.setOnErrorListener { _, _, _ ->
+            if (fromCache == null) {
+                showJob = scope.launch {
                     try {
-                        val videoPath = module.callAttr("download_video", url).toString()
-
-                        // Switch to main thread to update UI
-                        withContext(Dispatchers.Main) {
-                            displayVideo(videoPath)
-                        }
-                    } catch (e: PyException) {
-                        withContext(Dispatchers.Main) {
-                            Toast.makeText(this@MainActivity, "Error: ${e.message}", Toast.LENGTH_LONG).show()
-                        }
+                        val file = withContext(Dispatchers.IO) { backend.download(item, cacheRoot) }
+                        playVideo(item, file)
+                    } catch (e: Exception) {
+                        toast(errorText(e), long = true)
+                        setBusy(false)
                     }
                 }
-
-            } catch (e: Exception) {
-                Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+            } else {
+                toast("Cannot play this video")
+                setBusy(false)
             }
+            true
         }
+        if (fromCache != null) videoView.setVideoPath(fromCache.path)
+        else videoView.setVideoURI(Uri.parse(item.url), item.headers)
     }
 
-    private fun setupControlButtons() {
-        btnPlay.setOnClickListener {
-            if (videoView.isPlaying) {
-                Toast.makeText(this, "Video is already playing", Toast.LENGTH_SHORT).show()
-            } else {
-                videoView.start()
-                Toast.makeText(this, "Playing video", Toast.LENGTH_SHORT).show()
-            }
-        }
+    private suspend fun showImage(item: MediaItem) {
+        val bitmap = withContext(Dispatchers.IO) {
+            val file = backend.download(item, cacheRoot)
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(file.path, bounds)
+            var sample = 1
+            while (bounds.outWidth / sample > 2048 || bounds.outHeight / sample > 2048) sample *= 2
+            BitmapFactory.decodeFile(file.path, BitmapFactory.Options().apply { inSampleSize = sample })
+        } ?: throw IllegalStateException("Cannot decode image")
+        imageView.setImageBitmap(bitmap)
+        imageView.visibility = View.VISIBLE
+        setBusy(false)
+    }
 
-        btnPause.setOnClickListener {
-            if (videoView.isPlaying) {
-                videoView.pause()
-                Toast.makeText(this, "Video paused", Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(this, "Video is not playing", Toast.LENGTH_SHORT).show()
-            }
-        }
+    private fun step(delta: Int) {
+        val p = post ?: return
+        index = (index + delta + p.items.size) % p.items.size
+        show()
+    }
 
-        btnStop.setOnClickListener {
-            videoView.stopPlayback()
-            Toast.makeText(this, "Video stopped", Toast.LENGTH_SHORT).show()
-        }
+    private fun stopVideo() {
+        videoView.stopPlayback()
+        mediaPlayer = null
+    }
 
+    private fun setupControls() {
+        findViewById<Button>(R.id.btnPlay).setOnClickListener { if (!videoView.isPlaying) videoView.start() }
+        findViewById<Button>(R.id.btnPause).setOnClickListener { if (videoView.isPlaying) videoView.pause() }
+        findViewById<Button>(R.id.btnStop).setOnClickListener { videoView.pause(); videoView.seekTo(0) }
         btnMute.setOnClickListener {
-            if (isMuted) {
-                // Unmute
-                videoView.setOnPreparedListener { mediaPlayer ->
-                    mediaPlayer.setVolume(originalVolume, originalVolume)
-                }
-                btnMute.text = "Mute"
-                isMuted = false
-                Toast.makeText(this, "Sound unmuted", Toast.LENGTH_SHORT).show()
-            } else {
-                // Mute
-                videoView.setOnPreparedListener { mediaPlayer ->
-                    mediaPlayer.setVolume(0.0f, 0.0f)
-                }
-                btnMute.text = "Unmute"
-                isMuted = true
-                Toast.makeText(this, "Sound muted", Toast.LENGTH_SHORT).show()
-            }
+            isMuted = !isMuted
+            applyMute()
         }
     }
 
-    private fun displayVideo(videoPath: String) {
-        try {
-            val videoFile = File(videoPath)
-            if (videoFile.exists()) {
-                // Clean up previous video file
-                currentVideoFile?.delete()
-                currentVideoFile = videoFile
+    private fun applyMute() {
+        val v = if (isMuted) 0f else 1f
+        mediaPlayer?.setVolume(v, v)
+        btnMute.text = if (isMuted) "Unmute" else "Mute"
+    }
 
-                // Set up video view
-                videoView.setVideoPath(videoPath)
-                videoView.setOnPreparedListener { mediaPlayer ->
-                    mediaPlayer.isLooping = false
-                    // Store original volume (default is 1.0f)
-                    originalVolume = 1.0f
-                    Toast.makeText(this, "Video ready to play", Toast.LENGTH_SHORT).show()
+    // ---- download ----------------------------------------------------------------------------
+
+    private fun downloadCurrent() {
+        val p = post ?: return
+        saveItems(listOf(p.items[index]))
+    }
+
+    private fun downloadAll() {
+        val p = post ?: return
+        saveItems(p.items)
+    }
+
+    private fun saveItems(items: List<MediaItem>) {
+        if (!hasStoragePermission()) {
+            pendingSave = { saveItems(items) }
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), 1)
+            return
+        }
+        setBusy(true)
+        scope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    items.forEach { item ->
+                        val file = backend.download(item, cacheRoot)
+                        MediaSaver.save(this@MainActivity, file, item.type)
+                        file.delete()
+                    }
                 }
-
-                videoView.setOnErrorListener { _, _, _ ->
-                    Toast.makeText(this, "Error playing video", Toast.LENGTH_SHORT).show()
-                    true
-                }
-
-                videoView.setOnCompletionListener {
-                    Toast.makeText(this, "Video playback completed", Toast.LENGTH_SHORT).show()
-                }
-
-                // Start playing automatically
-                videoView.start()
-            } else {
-                Toast.makeText(this, "Video file not found", Toast.LENGTH_SHORT).show()
+                toast("Saved ${items.size} file(s) to Movies/Pictures › vidspy")
+            } catch (e: Exception) {
+                toast(errorText(e), long = true)
             }
-        } catch (e: Exception) {
-            Toast.makeText(this, "Error displaying video: ${e.message}", Toast.LENGTH_LONG).show()
+            setBusy(false)
         }
     }
+
+    private fun hasStoragePermission() =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) ==
+            PackageManager.PERMISSION_GRANTED
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        val action = pendingSave
+        pendingSave = null
+        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) action?.invoke()
+        else toast("Storage permission is needed to save files")
+    }
+
+    // ---- misc --------------------------------------------------------------------------------
+
+    private fun setBusy(busy: Boolean) {
+        progress.visibility = if (busy) View.VISIBLE else View.INVISIBLE
+    }
+
+    private fun toast(msg: String, long: Boolean = false) =
+        Toast.makeText(this, msg, if (long) Toast.LENGTH_LONG else Toast.LENGTH_SHORT).show()
+
+    /** Python errors look like "vidspy_backend.api.VidspyError: message"; show just the message. */
+    private fun errorText(e: Exception) = (e.message ?: "Unknown error").substringAfter("VidspyError: ")
 
     override fun onDestroy() {
         super.onDestroy()
-        // Clean up video file when activity is destroyed
-        currentVideoFile?.delete()
+        scope.cancel()
+        stopVideo()
+        cacheRoot.deleteRecursively()
     }
 }
-

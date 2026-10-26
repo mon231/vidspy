@@ -1,0 +1,6 @@
+eel
+yt-dlp
+gallery-dl
+requests
+beautifulsoup4
+m3u8

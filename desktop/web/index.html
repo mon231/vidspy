@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>vidspy</title>
+<link rel="icon" type="image/png" href="favicon.png">
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+<script type="text/javascript" src="/eel.js"></script>
+<style>
+  body { font: 15px system-ui, sans-serif; margin: 0; padding: 16px; background: #14141a; color: #eee; }
+  .row { display: flex; gap: 8px; margin-bottom: 10px; }
+  input { flex: 1; padding: 8px; border-radius: 6px; border: 1px solid #444; background: #1f1f28; color: #eee; }
+  button { padding: 8px 14px; border-radius: 6px; border: 0; background: #6750a4; color: #fff; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  #viewer { display: flex; justify-content: center; background: #000; border-radius: 8px; min-height: 120px; }
+  video, img { max-width: 100%; max-height: 62vh; }
+  #info, #status { margin: 8px 0; color: #aaa; }
+  #status.err { color: #ff8a80; }
+</style>
+</head>
+<body>
+  <h1 style="margin:0 0 12px;font-size:20px;display:flex;align-items:center;gap:10px">
+    <img src="favicon.png" alt="" width="32" height="32" style="border-radius:7px">vidspy</h1>
+  <div class="row">
+    <input id="url" placeholder="Instagram, TikTok, LinkedIn, YouTube or .m3u8 link" autofocus>
+    <button id="go">Watch</button>
+  </div>
+  <div id="info"></div>
+  <div id="viewer"></div>
+  <div class="row" id="nav" style="display:none; margin-top:10px">
+    <button id="prev">&lt;</button><span id="counter" style="align-self:center"></span><button id="next">&gt;</button>
+    <span style="flex:1"></span>
+    <button id="dl">Download</button><button id="dlAll">Download all</button>
+  </div>
+  <div id="status"></div>
+<script>
+let post = null, idx = 0;
+const $ = id => document.getElementById(id);
+const status = (msg, err) => { $('status').textContent = msg || ''; $('status').className = err ? 'err' : ''; };
+
+async function go() {
+  const text = $('url').value.trim();
+  if (!text) return;
+  status('Resolving…'); $('viewer').innerHTML = '';
+  const r = await eel.resolve(text)();
+  if (!r.ok) { status(r.error, true); return; }
+  post = r.post; idx = 0; status(''); show();
+}
+
+function show() {
+  const item = post.items[idx];
+  $('nav').style.display = 'flex';
+  $('counter').textContent = `${idx + 1} / ${post.items.length}`;
+  $('info').textContent = `${post.platform} · ${item.title}`;
+  const el = document.createElement(item.type === 'video' ? 'video' : 'img');
+  if (item.type === 'video') { el.controls = true; el.autoplay = true; }
+  if (item.ext === 'm3u8' && window.Hls && Hls.isSupported()) {
+    const hls = new Hls(); hls.loadSource(item.stream); hls.attachMedia(el);
+    hls.on(Hls.Events.ERROR, (_, d) => d.fatal && status('Cannot play this stream', true));
+  } else {
+    el.src = item.stream;  // mp4/images, or native HLS (Safari)
+  }
+  el.onerror = () => status('Cannot play/show this media', true);
+  $('viewer').replaceChildren(el);
+}
+
+async function save(items) {
+  for (const it of items) {
+    status('Downloading…');
+    const r = await eel.download(it.id)();
+    if (!r.ok) { status(r.error, true); return; }
+    status('Saved: ' + r.path);
+  }
+}
+
+$('go').onclick = go;
+$('url').onkeydown = e => { if (e.key === 'Enter') go(); };
+$('prev').onclick = () => { idx = (idx - 1 + post.items.length) % post.items.length; show(); };
+$('next').onclick = () => { idx = (idx + 1) % post.items.length; show(); };
+$('dl').onclick = () => save([post.items[idx]]);
+$('dlAll').onclick = () => save(post.items);
+</script>
+</body>
+</html>

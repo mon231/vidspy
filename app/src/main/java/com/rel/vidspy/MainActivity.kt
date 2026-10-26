@@ -113,8 +113,6 @@ class MainActivity : AppCompatActivity() {
         if (!text.isNullOrBlank()) etUrl.setText(text)
     }
 
-    // ---- resolve -----------------------------------------------------------------------------
-
     private fun fetch() {
         val text = etUrl.text.toString()
         if (text.isBlank()) return toast("Please enter a link")
@@ -135,8 +133,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
-
-    // ---- viewer ------------------------------------------------------------------------------
 
     private fun show() {
         val p = post ?: return
@@ -233,8 +229,6 @@ class MainActivity : AppCompatActivity() {
         btnMute.text = if (isMuted) "Unmute" else "Mute"
     }
 
-    // ---- download ----------------------------------------------------------------------------
-
     private fun downloadCurrent() {
         val p = post ?: return
         saveItems(listOf(p.items[index]))
@@ -281,8 +275,6 @@ class MainActivity : AppCompatActivity() {
         if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) action?.invoke()
         else toast("Storage permission is needed to save files")
     }
-
-    // ---- misc --------------------------------------------------------------------------------
 
     private fun setBusy(busy: Boolean) {
         progress.visibility = if (busy) View.VISIBLE else View.INVISIBLE

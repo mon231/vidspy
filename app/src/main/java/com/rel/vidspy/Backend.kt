@@ -32,7 +32,6 @@ class Backend(filesDir: File) {
     private val module by lazy { Python.getInstance().getModule("vidspy_backend") }
 
     init {
-        // app-private storage; excluded from backups (allowBackup=false)
         module.callAttr("configure", File(filesDir, "accounts").absolutePath)
     }
 

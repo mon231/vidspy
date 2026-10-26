@@ -104,7 +104,6 @@ def main_gui():
         except Exception as e:
             return {"ok": False, "error": str(e).split("VidspyError: ")[-1]}
 
-    # Linked accounts: all logic lives in vidspy_backend.accounts; these just forward.
     @eel.expose
     def accounts_list():
         return _call(backend.accounts_list)

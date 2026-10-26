@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vidspy-backend"
-version = "0.1.0"
-description = "Anonymous media resolver/downloader for Instagram, TikTok and LinkedIn"
+description = "Anonymous media resolver/downloader for social-media platforms"
 requires-python = ">=3.9"
-dynamic = ["dependencies"]
+dynamic = ["version", "dependencies"]
 
 [tool.setuptools]
 packages = ["vidspy_backend"]
 
 [tool.setuptools.dynamic]
+version = { attr = "vidspy_backend._version.__version__" }
 dependencies = { file = ["requirements.txt"] }

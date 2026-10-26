@@ -12,8 +12,8 @@ android {
         applicationId "com.rel.vidspy"
         minSdk = 24
         targetSdk = 35
-        versionCode 1
-        versionName "1.0"
+        versionCode (project.findProperty("versionCode") ?: "1").toInteger()
+        versionName project.findProperty("versionName") ?: "1.0"
 
 
         ndk {
@@ -21,7 +21,6 @@ android {
         }
         python {
             version "3.11"
-            // Single source of truth shared with the desktop app and pyproject.toml
             pip {
                 install "-r", "../backend/requirements.txt"
             }
@@ -35,7 +34,6 @@ android {
         }
     }
     sourceSets {
-        // Shared Python package, also used by the desktop app (see /backend)
         main.python.srcDir "../backend"
     }
     compileOptions {

@@ -1,18 +1,4 @@
-"""Media extractors for vidspy.
-
-Every extractor takes a post URL and returns a list of media item dicts:
-
-    {
-        "type": "video" | "image",
-        "url": "<direct media url>",
-        "ext": "mp4",
-        "title": "...",
-        "thumbnail": "<url or None>",
-        "headers": {"User-Agent": "...", "Cookie": "..."},   # needed to fetch `url`
-    }
-
-Extractors raise on failure; the facade in `vidspy_backend.api` tries the next one.
-"""
+"""Media extractors. Each takes a post URL and returns item dicts {type, url, ext, title, thumbnail, headers}; they raise on failure."""
 import json
 import re
 
@@ -34,10 +20,6 @@ def _ext_from_url(url, default):
     m = re.search(r"\.([A-Za-z0-9]{2,5})(?:\?|$)", url.split("#")[0])
     return m.group(1).lower() if m else default
 
-
-# --------------------------------------------------------------------------
-# yt-dlp: primary extractor for video (Instagram, TikTok)
-# --------------------------------------------------------------------------
 
 def _best_progressive(formats):
     """Pick the best single-file http(s) format. Android has no ffmpeg, so
@@ -124,10 +106,6 @@ def ytdlp_extract(url):
         return items[:MAX_ITEMS]
 
 
-# --------------------------------------------------------------------------
-# gallery-dl: image posts / carousels (Instagram, TikTok photo posts)
-# --------------------------------------------------------------------------
-
 def vimeo_player_extract(url):
     """vimeo.com pages demand a login for yt-dlp's web client; the embeddable player page does not."""
     m = re.search(r"vimeo\.com/(?:.*/)?(\d{6,})", url)
@@ -183,10 +161,6 @@ def gallerydl_extract(url):
             break
     return items
 
-
-# --------------------------------------------------------------------------
-# Generic HTML scraper: LinkedIn public posts (no yt-dlp extractor exists)
-# --------------------------------------------------------------------------
 
 def parse_html_media(html):
     """Extract media from a public page. Returns list of item dicts without
@@ -264,10 +238,6 @@ def html_extract(url):
         it["headers"] = {"User-Agent": DEFAULT_UA, "Referer": "https://www.linkedin.com/"}
     return items[:MAX_ITEMS]
 
-
-# --------------------------------------------------------------------------
-# Direct .m3u8 links (any host)
-# --------------------------------------------------------------------------
 
 def hls_extract(url):
     import requests

@@ -1,15 +1,4 @@
-"""vidspy backend facade, called from Kotlin through Chaquopy.
-
-Public API (all arguments/returns are plain strings, JSON where structured):
-
-    resolve(text)                       -> JSON {"platform", "items": [...]}
-    download(item_json, dest_dir)       -> absolute path of the downloaded file
-
-    configure(data_dir)                 -> where linked-account cookies are stored
-    accounts_list()                     -> JSON [{"platform", "label", "connected", "help", ...}]
-    account_connect(platform, text)     -> JSON status (text: cookies.txt / JSON export / Cookie header)
-    account_disconnect(platform)        -> JSON status
-"""
+"""vidspy backend facade: plain strings in, JSON strings out (called from Kotlin via Chaquopy and from Eel)."""
 import hashlib
 import json
 import os
@@ -114,8 +103,6 @@ def download(item_json, dest_dir):
         raise VidspyError(f"Download failed: {e}")
     return path
 
-
-# ---- linked accounts (implemented once in accounts.py; UIs just call these) ---------------
 
 def configure(data_dir):
     accounts.configure(data_dir)

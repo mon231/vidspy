@@ -53,8 +53,6 @@ def cookie_file_for_url(url):
     return cookie_file(name) if name in platforms.PLATFORMS else None
 
 
-# ---- parsing -------------------------------------------------------------------------------
-
 def _clean(value):
     return re.sub(r"[\t\r\n]", "", str(value)).strip()
 
@@ -130,8 +128,6 @@ def parse_cookies(text, platform):
     return kept
 
 
-# ---- storage -------------------------------------------------------------------------------
-
 def _write(platform, cookies):
     far = int(time.time()) + 2 * _YEAR  # session cookies (expiry 0) would be dropped by cookie jars
     lines = ["# Netscape HTTP Cookie File"]
@@ -175,8 +171,6 @@ def _check(platform):
     if platform not in platforms.PLATFORMS:
         raise VidspyError(f"Unknown platform: {platform}")
 
-
-# ---- public API ----------------------------------------------------------------------------
 
 def list_accounts():
     return [_status(p) for p in platforms.PLATFORMS]

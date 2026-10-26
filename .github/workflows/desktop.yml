@@ -1,5 +1,8 @@
 name: Build vidspy desktop
-on: push
+on:
+  push:
+    branches: ['**']
+  pull_request:
 
 jobs:
   build:

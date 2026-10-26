@@ -1,4 +1,4 @@
-"""Pure-Python backend tests. Run: pip install pytest requests beautifulsoup4 && pytest tests"""
+"""Offline backend tests."""
 import json
 import os
 import sys
@@ -76,8 +76,6 @@ def test_best_progressive_skips_hls_and_prefers_audio():
     ]
     assert ex._best_progressive(formats)["url"] == "c"
 
-
-# ---- YouTube / HLS ---------------------------------------------------------
 
 @pytest.mark.parametrize("url,platform", [
     ("https://www.youtube.com/watch?v=abc", "youtube"),
@@ -161,8 +159,6 @@ def test_desktop_playlist_rewrite():
     assert "/media/ID?u=https%3A%2F%2Fh%2Fa%2Fseg%201.ts" in out
     assert 'URI="/media/ID?u=https%3A%2F%2Fh%2Fa%2Fk.key"' in out
 
-
-# ---- linked accounts -------------------------------------------------------
 
 from vidspy_backend import accounts, platforms  # noqa: E402
 
@@ -254,8 +250,6 @@ def test_cookies_reach_extractors(acc, monkeypatch):
     assert seen["cookiefile"].endswith("instagram.cookies.txt")
 
 
-# ---- dependency single source of truth ------------------------------------------------------
-
 def _req_names(path):
     import re
     names = []
@@ -304,8 +298,6 @@ def test_every_platform_has_extractors_and_android_logo():
         assert platforms.PLATFORMS[name]["icon"] in open(drawable, encoding="utf-8").read()
 
 
-# ---- reddit (Chrome-like session + .json parser) ------------------------------------------------
-
 def test_reddit_parse_image_gallery_and_video():
     from vidspy_backend import reddit
     img = reddit.parse_post({"title": "t", "post_hint": "image", "url": "https://i.redd.it/a.jpeg",
@@ -345,3 +337,12 @@ def test_hls_fallback_skips_encrypted_renditions(monkeypatch):
     formats = [{"url": "drm", "protocol": "m3u8_native", "vcodec": "h264", "acodec": "aac", "height": 1080},
                {"url": "clear", "protocol": "m3u8_native", "vcodec": "h264", "acodec": "aac", "height": 360}]
     assert ex._best_hls(formats)["url"] == "clear"
+
+
+def test_version_is_single_dynamic_source():
+    import re
+    import vidspy_backend
+    text = open(os.path.join(os.path.dirname(__file__), "..", "backend", "pyproject.toml"), encoding="utf-8").read()
+    assert not re.search(r"^version\s*=", text.split("[tool.")[0], re.M)
+    assert "vidspy_backend._version.__version__" in text
+    assert vidspy_backend.__version__

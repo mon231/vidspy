@@ -104,7 +104,17 @@ Requirements: JDK 17+, Android SDK (API 35), and a host Python 3.8+ on `PATH` (C
 # app/build/outputs/apk/debug/app-debug.apk
 ```
 
-CI (`.github/workflows/build.yml`) builds the APK on every push.
+CI builds the debug APK (`build.yml`) and the desktop executables (`desktop.yml`) on every push.
+
+### Releases
+
+Pushing a tag like `v1.2.0` runs `.github/workflows/release.yml`, which tests the backend, builds the onefile Windows `.exe` and Linux executable (no console, with icon) and a signed release APK, then publishes them as a GitHub release (`vidspy-windows-x64.exe`, `vidspy-linux-x64`, `vidspy-v1.2.0.apk`, and the backend wheel `vidspy_backend-1.2.0-py3-none-any.whl`). The tag (without the `v`) is the version of everything: APK `versionName`, the wheel, and `vidspy_backend.__version__` bundled in the executables. `backend/vidspy_backend/_version.py` holds a placeholder that CI overwrites.
+
+```bash
+git tag v1.2.0 && git push origin v1.2.0
+```
+
+Gradle builds the unsigned release APK, then [`signapp`](https://pypi.org/project/signapp/) (PyPI) zip-aligns and signs it with its built-in keystore, so no secrets are needed. That keystore is public: the APK installs fine, but its signature does not prove who built it. To sign with your own key instead, pass `-k release.jks` to `signapp` (it prompts for alias and password on stdin).
 
 Only `arm64-v8a` is packaged (see `abiFilters`). Add `x86_64` for emulators.
 

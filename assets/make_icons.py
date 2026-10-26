@@ -2,14 +2,17 @@
 
     pip install pillow && python assets/make_icons.py
 
-Writes: assets/icon.svg, icon.png, icon.ico, desktop/web/favicon.png,
+Writes: Android platform logos (from backend/platforms.py), assets/icon.svg, icon.png, icon.ico, desktop/web/favicon.png,
 Android adaptive vectors + legacy mipmap PNGs.
 """
 import os
+import sys
 
 from PIL import Image, ImageDraw
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+sys.path.insert(0, os.path.join(ROOT, "backend"))
+from vidspy_backend import platforms  # noqa: E402
 BG, EYE, IRIS_C, PLAY = "#3B2A78", "#FFFFFF", "#26C6DA", "#FFFFFF"
 
 # 108x108 grid; artwork stays inside the 66dp adaptive-icon safe zone (x/y 21..87)
@@ -87,6 +90,15 @@ def main():
           f'  <path d="{EYE_PATH}" fill="{EYE}"/>\n'
           f'  <circle cx="{cx}" cy="{cy}" r="{r}" fill="{IRIS_C}"/>\n'
           f'  <path d="{tri}" fill="{PLAY}"/>\n</svg>\n')
+    # Platform logos for the Android Accounts screen (generated from backend/platforms.py)
+    for name, info in platforms.PLATFORMS.items():
+        write(f"app/src/main/res/drawable/ic_platform_{name}.xml",
+              '<?xml version="1.0" encoding="utf-8"?>\n'
+              '<vector xmlns:android="http://schemas.android.com/apk/res/android"\n'
+              '    android:width="24dp"\n    android:height="24dp"\n'
+              '    android:viewportWidth="24"\n    android:viewportHeight="24">\n'
+              f'    <path\n        android:fillColor="#FFFFFF"\n        android:pathData="{info["icon"]}" />\n'
+              '</vector>\n')
     # Legacy launcher PNGs (no safe zone -> draw artwork larger)
     for name, px in {"mdpi": 48, "hdpi": 72, "xhdpi": 96, "xxhdpi": 144, "xxxhdpi": 192}.items():
         render(px, "square", 1.25).save(os.path.join(ROOT, f"app/src/main/res/mipmap-{name}/ic_launcher.png"))

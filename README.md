@@ -6,7 +6,7 @@ Android app. Paste (or share) a social-media link, **watch it directly** in the 
 - Python backend running on-device via [Chaquopy](https://chaquo.com/chaquopy/)
 - Desktop app (Windows / macOS / Linux, [Eel](https://github.com/python-eel/Eel) GUI) for manual backend testing
 - **One shared backend package** (`backend/vidspy_backend`) used unchanged by both the APK and the desktop app
-- Platforms: **Instagram**, **TikTok**, **LinkedIn**, **YouTube**, plus any direct **`.m3u8`** (HLS) link
+- Platforms: **Instagram**, **TikTok**, **LinkedIn**, **YouTube**, **X/Twitter**, **Facebook**, **Reddit**, **Pinterest**, **Vimeo**, plus any direct **`.m3u8`** (HLS) link
 - Videos and images, including multi-item carousels
 
 ## Features
@@ -17,12 +17,14 @@ Android app. Paste (or share) a social-media link, **watch it directly** in the 
 | Download | Saves to `Movies/vidspy` (video) or `Pictures/vidspy` (image) through MediaStore. |
 | Download all | Saves every item of a carousel / multi-media post. |
 | Share target | Share a link from the Instagram / TikTok / LinkedIn app straight to vidspy. |
-| Anonymous only | No cookies, no login. Private or login-walled posts fail with a clear message. |
+| Anonymous by default | No login needed. Login-walled posts fail with a clear message, unless you link an account (below). |
+| Linked accounts | **Accounts** button: connect each platform with your browser cookies; used automatically for that platform's links. |
 
 ## Layout
 
 ```
-backend/vidspy_backend/   shared Python package (api.py, extractors.py)  <- APK + desktop
+backend/vidspy_backend/   shared Python package (api, extractors, hls, accounts, platforms)  <- APK + desktop
+backend/requirements.txt  the ONLY list of backend dependencies (Gradle, pyproject and desktop all read it)
 app/                      Android app (Kotlin); Gradle adds ../backend as Chaquopy source dir
 desktop/                  Eel GUI: app.py + web/index.html
 assets/                   icon master (make_icons.py -> svg/png/ico, Android mipmaps, favicon)
@@ -66,6 +68,11 @@ First extractor returning media wins; errors fall through to the next.
 | TikTok | yt-dlp (videos) | gallery-dl (photo slideshows) |
 | LinkedIn | built-in HTML scraper (`requests` + `beautifulsoup4`) | — |
 | YouTube | yt-dlp (progressive mp4, else HLS) | — |
+| X / Twitter | yt-dlp (videos, GIFs) | gallery-dl (photo tweets, multi-image) |
+| Facebook | yt-dlp (public videos, reels, `fb.watch`) | gallery-dl (photos) |
+| Reddit | yt-dlp (videos) | gallery-dl (images, galleries) |
+| Pinterest | yt-dlp (video pins) | gallery-dl (image pins) |
+| Vimeo | yt-dlp | — |
 | `.m3u8` URL | built-in HLS validator (`m3u8`) | — |
 
 LinkedIn has no yt-dlp extractor for public posts, so vidspy reads `<video data-sources>` / `og:video` / `og:image` from the public post page itself.
@@ -83,6 +90,8 @@ Android has no ffmpeg, so vidspy never muxes. It prefers single-file progressive
 | [m3u8](https://github.com/globocom/m3u8) | HLS playlist parsing. |
 | [hls.js](https://github.com/video-dev/hls.js) | HLS playback in the desktop webview (loaded from CDN; Android plays HLS natively). |
 | [Chaquopy](https://chaquo.com/chaquopy/) | Runs CPython inside the Android app. |
+
+Dependencies are declared once in `backend/requirements.txt`: Gradle (`pip { install "-r", "../backend/requirements.txt" }`), `pyproject.toml` (dynamic dependencies) and `desktop/requirements.txt` (`-r ../backend/requirements.txt`, plus `eel`) all read it, and a test fails if a name is duplicated.
 
 Extractors break when platforms change. Fix is usually bumping `yt-dlp` / `gallery-dl` in `app/build.gradle` (versions are unpinned, so a rebuild picks up the latest).
 
@@ -105,8 +114,19 @@ Pure-Python tests run on the host, no Android needed. For manual end-to-end test
 
 ```bash
 pip install pytest requests beautifulsoup4
-pytest tests
+pytest tests            # offline unit tests
+pytest -m live          # anonymous public-video smoke test per platform (needs internet)
 ```
+
+## Linked accounts
+
+Tap **Accounts** (phone) or the **Accounts** button (desktop). Every platform shows its logo, its connection state, and a step-by-step panel with a direct link to that platform's login page. The credential is your browser **session cookies**, not your password: password logins are blocked or short-lived on these platforms, while a cookie works with yt-dlp, gallery-dl and the LinkedIn scraper alike.
+
+1. Log in to the platform in your browser.
+2. On a computer, press F12 in that tab, open the Network tab, reload, click any request to the platform and copy its `Cookie` request header.
+3. Paste it and Save. Saving is refused unless the cookies include a real login (e.g. `sessionid` for Instagram, `li_at` for LinkedIn, `reddit_session` or `token_v2` for Reddit), so you never end up with a half-working account.
+
+Implemented once, in `backend/vidspy_backend/accounts.py`. Both UIs only call `accounts_list()`, `account_connect(platform, text)` and `account_disconnect(platform)`. Labels, steps, login URLs, brand colors and logos all come from the backend registry (`platforms.py`, logos from [Simple Icons](https://simpleicons.org), CC0); `python assets/make_icons.py` turns that registry into the Android logo drawables, and a test fails if they drift apart. Cookies for other sites in a pasted export are discarded. They are stored as one Netscape cookie file per platform (mode 0600): app-private storage on Android (backup disabled) and `~/.vidspy/accounts` on desktop. They are never logged and never leave the device except in requests to that platform. Treat them like a password: anyone with the file can act as you.
 
 ## Desktop app (manual backend testing)
 
@@ -130,13 +150,14 @@ An eye (spy) with a play button as the iris. `python assets/make_icons.py` regen
 
 ## Limitations
 
-- Anonymous only: private accounts, age/region-gated and login-walled posts fail. Instagram increasingly login-walls anonymous requests; expect failures there.
+- Without a linked account Vimeo, Reddit (currently), Facebook and X often login-wall posts, so link an account for them;
+- Reddit serves video and audio as separate streams. Merging needs ffmpeg, so Reddit videos play without sound (the app shows a note); private accounts, age/region-gated and login-walled posts fail. Instagram increasingly login-walls anonymous requests; expect failures there.
 - LinkedIn scraping depends on the public page markup and may break.
 - Live HLS streams download only the segments currently listed. Stories, live streams and profile/playlist links are not supported (only single posts).
 - Use only for content you have the right to save. Respect each platform's terms and creators' copyright.
 
 ## Roadmap
 
-- **Linked accounts** (Instagram / YouTube / LinkedIn / …): optional login so private-to-you and login-walled content works. Plan: store session cookies per platform in `EncryptedSharedPreferences`, pass them to yt-dlp (`cookiefile`) and gallery-dl (`config cookies`); the extractor interface already takes one URL and returns items, so accounts slot in as an optional `session` argument.
-- More platforms: X/Twitter, Facebook, Reddit (yt-dlp/gallery-dl already support them; add a `PLATFORM_DOMAINS` + `PLATFORM_EXTRACTORS` entry).
+- Linked accounts: encrypt the cookie files at rest (Android Keystore / OS keyring); in-app browser login instead of pasting cookies.
+- More platforms: Threads, Twitch, Bluesky, Snapchat Spotlight (yt-dlp/gallery-dl already support them; add a `PLATFORM_DOMAINS` + `PLATFORM_EXTRACTORS` entry).
 - Quality picker, download history, background downloads with notifications.

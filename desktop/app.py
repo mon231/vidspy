@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.join(HERE, "..", "backend"))  # or: pip install -e ba
 import vidspy_backend as backend  # noqa: E402  (same package the Android app bundles)
 from vidspy_backend import extractors  # noqa: E402
 
+backend.configure(os.path.join(os.path.expanduser("~"), ".vidspy", "accounts"))
 DOWNLOAD_DIR = os.path.join(os.path.expanduser("~"), "Downloads", "vidspy")
 _items = {}  # id -> item dict; lets the browser stream via /media/<id> with the right headers
 
@@ -96,6 +97,25 @@ def main_gui():
             return {"ok": True, "path": path}
         except Exception as e:
             return {"ok": False, "error": str(e).split("VidspyError: ")[-1]}
+
+    def _call(fn, *args):
+        try:
+            return {"ok": True, "data": json.loads(fn(*args))}
+        except Exception as e:
+            return {"ok": False, "error": str(e).split("VidspyError: ")[-1]}
+
+    # Linked accounts: all logic lives in vidspy_backend.accounts; these just forward.
+    @eel.expose
+    def accounts_list():
+        return _call(backend.accounts_list)
+
+    @eel.expose
+    def account_connect(platform, text):
+        return _call(backend.account_connect, platform, text)
+
+    @eel.expose
+    def account_disconnect(platform):
+        return _call(backend.account_disconnect, platform)
 
     eel.init(os.path.join(HERE, "web"))
     try:

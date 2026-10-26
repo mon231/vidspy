@@ -1,6 +1,3 @@
+# backend deps come from the single source of truth (no duplicates here)
+-r ../backend/requirements.txt
 eel
-yt-dlp
-gallery-dl
-requests
-beautifulsoup4
-m3u8

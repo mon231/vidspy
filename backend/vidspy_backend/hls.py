@@ -34,9 +34,15 @@ def pick_media_playlist(session, url):
     return playlist, url
 
 
+def is_encrypted(playlist):
+    return any(k and (k.method or "NONE").upper() != "NONE" for k in playlist.keys)
+
+
 def check_playlist(session, url):
-    """Raise HlsError/requests error if `url` is not a usable HLS playlist."""
-    pick_media_playlist(session, url)
+    """Raise HlsError/requests error if `url` is not a downloadable (unencrypted) HLS playlist."""
+    playlist, _ = pick_media_playlist(session, url)
+    if is_encrypted(playlist):
+        raise HlsError("Encrypted HLS streams are not supported")
 
 
 def _fetch(session, url, retries=3):
@@ -54,7 +60,7 @@ def _fetch(session, url, retries=3):
 def download_hls(session, url, dest_base):
     """Download the stream at `url` to `dest_base` + '.ts'/'.mp4'; returns the path."""
     playlist, _ = pick_media_playlist(session, url)
-    if any(k and (k.method or "NONE").upper() != "NONE" for k in playlist.keys):
+    if is_encrypted(playlist):
         raise HlsError("Encrypted HLS streams are not supported")
     maps = [m for m in (playlist.segment_map or []) if m.absolute_uri]
     ext = "mp4" if maps else "ts"

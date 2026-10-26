@@ -14,15 +14,29 @@
   button:disabled { opacity: .5; cursor: default; }
   #viewer { display: flex; justify-content: center; background: #000; border-radius: 8px; min-height: 120px; }
   video, img { max-width: 100%; max-height: 62vh; }
-  #info, #status { margin: 8px 0; color: #aaa; }
+  #info, #status { margin: 8px 0; color: #aaa; white-space: pre-line; }
   #status.err { color: #ff8a80; }
+  dialog { background: #1f1f28; color: #eee; border: 1px solid #444; border-radius: 10px; width: min(560px, 92vw); }
+  dialog::backdrop { background: rgba(0,0,0,.6); }
+  .acc { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid #333; }
+  .acc .name { flex: 1; } .acc small { display: block; color: #aaa; }
+  textarea { width: 100%; box-sizing: border-box; min-height: 120px; margin: 8px 0; background: #14141a; color: #eee;
+             border: 1px solid #444; border-radius: 6px; padding: 8px; }
+  button.secondary { background: #3a3a48; }
+  a.btn { padding: 8px 14px; border-radius: 6px; background: #6750a4; color: #fff; text-decoration: none; font-size: 14px; }
+  a.btn.secondary { background: #3a3a48; }
+  .badge { display: inline-flex; align-items: center; justify-content: center; border-radius: 22%;
+           border: 1px solid #444; flex: none; }
+  #connectSteps { padding-left: 20px; color: #ccc; font-size: 13px; }
+  #connectSteps li { margin: 6px 0; }
 </style>
 </head>
 <body>
   <h1 style="margin:0 0 12px;font-size:20px;display:flex;align-items:center;gap:10px">
-    <img src="favicon.png" alt="" width="32" height="32" style="border-radius:7px">vidspy</h1>
+    <img src="favicon.png" alt="" width="32" height="32" style="border-radius:7px">vidspy
+    <span style="flex:1"></span><button id="settingsBtn" class="secondary" style="font-size:13px">Accounts</button></h1>
   <div class="row">
-    <input id="url" placeholder="Instagram, TikTok, LinkedIn, YouTube or .m3u8 link" autofocus>
+    <input id="url" placeholder="Instagram, TikTok, YouTube, X, Facebook, LinkedIn or .m3u8 link" autofocus>
     <button id="go">Watch</button>
   </div>
   <div id="info"></div>
@@ -33,6 +47,23 @@
     <button id="dl">Download</button><button id="dlAll">Download all</button>
   </div>
   <div id="status"></div>
+  <dialog id="settings">
+    <h3 style="margin-top:0">Linked accounts</h3>
+    <div style="color:#aaa;font-size:13px">Optional. Connect an account to open posts that need a login. Cookies stay on this computer.</div>
+    <div id="accList"></div>
+    <div id="connectBox" style="display:none">
+      <h4 id="connectTitle" style="margin:14px 0 6px;display:flex;align-items:center;gap:10px"></h4>
+      <ol id="connectSteps"></ol>
+      <div class="row">
+        <a id="loginLink" class="btn" target="_blank" rel="noopener noreferrer"></a>
+      </div>
+      <textarea id="cookieText" placeholder="Paste the Cookie header value here"></textarea>
+      <div class="row"><button id="saveCookies">Save</button><button id="cancelCookies" class="secondary">Cancel</button></div>
+      <div id="connectHelp" style="color:#aaa;font-size:12px"></div>
+    </div>
+    <div id="accStatus" style="min-height:1.2em;color:#aaa"></div>
+    <div class="row" style="justify-content:flex-end;margin:8px 0 0"><button id="closeSettings" class="secondary">Close</button></div>
+  </dialog>
 <script>
 let post = null, idx = 0;
 const $ = id => document.getElementById(id);
@@ -51,7 +82,7 @@ function show() {
   const item = post.items[idx];
   $('nav').style.display = 'flex';
   $('counter').textContent = `${idx + 1} / ${post.items.length}`;
-  $('info').textContent = `${post.platform} · ${item.title}`;
+  $('info').textContent = `${post.platform} · ${item.title}` + (item.note ? `\n${item.note}` : '');
   const el = document.createElement(item.type === 'video' ? 'video' : 'img');
   if (item.type === 'video') { el.controls = true; el.autoplay = true; }
   if (item.ext === 'm3u8' && window.Hls && Hls.isSupported()) {
@@ -72,6 +103,49 @@ async function save(items) {
     status('Saved: ' + r.path);
   }
 }
+
+// ---- linked accounts (UI only; logic is in the backend) ----
+let connecting = null;
+const badge = (a, size) => `<span class="badge" style="width:${size}px;height:${size}px;background:${a.color}">` +
+  `<svg viewBox="0 0 24 24" width="${Math.round(size * .6)}" height="${Math.round(size * .6)}" fill="#fff"><path d="${a.icon}"/></svg></span>`;
+const accStatus = (m, err) => { $('accStatus').textContent = m || ''; $('accStatus').style.color = err ? '#ff8a80' : '#aaa'; };
+
+async function loadAccounts() {
+  const r = await eel.accounts_list()();
+  if (!r.ok) return accStatus(r.error, true);
+  $('accList').replaceChildren(...r.data.map(a => {
+    const row = document.createElement('div'); row.className = 'acc';
+    const state = !a.connected ? 'Not connected' : `Connected (${a.count} cookies)`;
+    row.innerHTML = badge(a, 36) + `<div class="name">${a.label}<small>${state}</small></div>`;
+    const b = document.createElement('button'); b.textContent = a.connected ? 'Replace' : 'Connect';
+    b.onclick = () => {
+      connecting = a;
+      $('connectTitle').innerHTML = badge(a, 32) + `<span>Connect ${a.label}</span>`;
+      $('connectSteps').replaceChildren(...a.steps.map(t => Object.assign(document.createElement('li'), { textContent: t })));
+      $('loginLink').href = a.login_url; $('loginLink').textContent = `Open ${a.label} login`;
+      $('connectHelp').textContent = a.privacy;
+      $('cookieText').value = ''; $('connectBox').style.display = 'block';
+      $('connectBox').scrollIntoView({ block: 'nearest' });
+    };
+    row.append(b);
+    if (a.connected) {
+      const d = document.createElement('button'); d.className = 'secondary'; d.textContent = 'Remove';
+      d.onclick = async () => { await eel.account_disconnect(a.platform)(); accStatus(a.label + ' removed'); loadAccounts(); };
+      row.append(d);
+    }
+    return row;
+  }));
+}
+$('settingsBtn').onclick = () => { accStatus(''); $('connectBox').style.display = 'none'; loadAccounts(); $('settings').showModal(); };
+$('closeSettings').onclick = () => $('settings').close();
+$('cancelCookies').onclick = () => { $('connectBox').style.display = 'none'; };
+$('saveCookies').onclick = async () => {
+  const r = await eel.account_connect(connecting.platform, $('cookieText').value)();
+  if (!r.ok) return accStatus(r.error, true);
+  $('connectBox').style.display = 'none';
+  accStatus(connecting.label + ' connected');
+  loadAccounts();
+};
 
 $('go').onclick = go;
 $('url').onkeydown = e => { if (e.key === 'Enter') go(); };

@@ -21,12 +21,9 @@ android {
         }
         python {
             version "3.11"
+            // Single source of truth shared with the desktop app and pyproject.toml
             pip {
-                install "yt-dlp"
-                install "gallery-dl"
-                install "requests"
-                install "beautifulsoup4"
-                install "m3u8"
+                install "-r", "../backend/requirements.txt"
             }
         }
     }

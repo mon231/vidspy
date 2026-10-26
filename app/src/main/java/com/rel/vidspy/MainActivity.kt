@@ -63,7 +63,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         if (!Python.isStarted()) Python.start(AndroidPlatform(this))
-        backend = Backend()
+        backend = Backend(filesDir)
         cacheRoot = File(cacheDir, "vidspy").apply { deleteRecursively(); mkdirs() }
 
         etUrl = findViewById(R.id.etX)
@@ -79,6 +79,9 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<Button>(R.id.button).setOnClickListener { fetch() }
         findViewById<Button>(R.id.btnPaste).setOnClickListener { paste() }
+        findViewById<Button>(R.id.btnSettings).setOnClickListener {
+            startActivity(Intent(this, SettingsActivity::class.java))
+        }
         findViewById<Button>(R.id.btnPrev).setOnClickListener { step(-1) }
         findViewById<Button>(R.id.btnNext).setOnClickListener { step(1) }
         findViewById<Button>(R.id.btnDownload).setOnClickListener { downloadCurrent() }
@@ -145,7 +148,7 @@ class MainActivity : AppCompatActivity() {
         controlLayout.visibility = View.GONE
         navLayout.visibility = if (p.items.size > 1) View.VISIBLE else View.GONE
         tvCounter.text = "${index + 1} / ${p.items.size}"
-        tvInfo.text = "${p.platform} · ${item.title}"
+        tvInfo.text = "${p.platform} · ${item.title}" + (item.note?.let { "\n$it" } ?: "")
         setBusy(true)
 
         showJob = scope.launch {

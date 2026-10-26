@@ -16,6 +16,8 @@ Extractors raise on failure; the facade in `vidspy_backend.api` tries the next o
 import json
 import re
 
+from . import accounts
+
 DEFAULT_UA = (
     "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
@@ -53,13 +55,23 @@ def _best_progressive(formats):
 
 
 def _best_hls(formats):
-    """Fallback when no progressive format exists: best m3u8 (downloaded by `hls.py`)."""
+    """Fallback when no progressive format exists: best m3u8 that `hls.py` can download
+    (DRM / encrypted renditions are skipped)."""
+    import requests
+    from . import hls
+
     ok = [f for f in formats
           if f.get("url") and (f.get("protocol") or "").startswith("m3u8") and f.get("vcodec") != "none"]
-    if not ok:
-        return None
-    ok.sort(key=lambda f: (f.get("acodec") != "none", f.get("height") or 0, f.get("tbr") or 0))
-    return ok[-1]
+    ok.sort(key=lambda f: (f.get("acodec") != "none", f.get("height") or 0, f.get("tbr") or 0), reverse=True)
+    for f in ok:
+        session = requests.Session()
+        session.headers.update(f.get("http_headers") or {})
+        try:
+            hls.check_playlist(session, f["url"])
+            return f
+        except Exception:  # noqa: BLE001 - unusable rendition, try the next one
+            continue
+    return None
 
 
 def ytdlp_extract(url):
@@ -73,6 +85,9 @@ def ytdlp_extract(url):
         "ignore_no_formats_error": True,  # YouTube has few single-file formats; we pick from info["formats"]
         "playlistend": 20,
     }
+    cookies = accounts.cookie_file_for_url(url)
+    if cookies:  # linked account (see accounts.py)
+        opts["cookiefile"] = cookies
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
         entries = [e for e in (info.get("entries") or [info]) if e]
@@ -103,6 +118,8 @@ def ytdlp_extract(url):
                 "title": entry.get("title") or entry.get("id") or "video",
                 "thumbnail": entry.get("thumbnail"),
                 "headers": headers,
+                # e.g. Reddit serves audio separately; merging needs ffmpeg, which is not on device
+                "note": "No sound: this site serves audio separately" if fmt.get("acodec") == "none" and not hls else None,
             })
         return items[:MAX_ITEMS]
 
@@ -111,9 +128,35 @@ def ytdlp_extract(url):
 # gallery-dl: image posts / carousels (Instagram, TikTok photo posts)
 # --------------------------------------------------------------------------
 
+def vimeo_player_extract(url):
+    """vimeo.com pages demand a login for yt-dlp's web client; the embeddable player page does not."""
+    m = re.search(r"vimeo\.com/(?:.*/)?(\d{6,})", url)
+    if not m:
+        raise ValueError("no Vimeo video id in link")
+    return ytdlp_extract(f"https://player.vimeo.com/video/{m.group(1)}")
+
+
+def _session_headers(session, media_url, referer):
+    """Headers gallery-dl's own session used, limited to cookies valid for the media host
+    (e.g. TikTok's CDN answers 403 without the anonymous session cookies)."""
+    from urllib.parse import urlparse
+
+    host = urlparse(media_url).hostname or ""
+    cookie = "; ".join(f"{c.name}={c.value}" for c in session.cookies
+                       if c.domain and host.endswith(c.domain.lstrip(".")))
+    headers = {"User-Agent": session.headers.get("User-Agent") or DEFAULT_UA}
+    if referer:
+        headers["Referer"] = referer
+    if cookie:
+        headers["Cookie"] = cookie
+    return headers
+
+
 def gallerydl_extract(url):
-    from gallery_dl import extractor
+    from gallery_dl import config, extractor
     from gallery_dl.extractor.message import Message
+
+    config.set(("extractor",), "cookies", accounts.cookie_file_for_url(url))  # None = anonymous
 
     ex = extractor.find(url)
     if ex is None:
@@ -134,7 +177,7 @@ def gallerydl_extract(url):
             "title": str(kw.get("description") or kw.get("title") or kw.get("post_shortcode")
                          or kw.get("tiktok_id") or "post")[:80],
             "thumbnail": media_url if _kind(ext) == "image" else None,
-            "headers": {"User-Agent": DEFAULT_UA},
+            "headers": _session_headers(ex.session, media_url, f"{getattr(ex, 'root', '')}/" if getattr(ex, "root", "") else None),
         })
         if len(items) >= MAX_ITEMS:
             break
@@ -195,7 +238,7 @@ def parse_html_media(html):
 
     if not items:
         og_img = soup.find("meta", property="og:image")
-        if og_img and og_img.get("content"):
+        if og_img and og_img.get("content") and "favicon" not in og_img["content"]                 and not og_img["content"].split("?")[0].endswith(".ico"):
             u = og_img["content"]
             add("image", u, _ext_from_url(u, "jpg"), u)
 
@@ -206,7 +249,13 @@ def html_extract(url):
     import requests
 
     headers = {"User-Agent": DEFAULT_UA, "Accept-Language": "en-US,en;q=0.9"}
-    resp = requests.get(url, headers=headers, timeout=20, allow_redirects=True)
+    jar = None
+    cookie_file = accounts.cookie_file_for_url(url)
+    if cookie_file:  # linked account (see accounts.py)
+        from http.cookiejar import MozillaCookieJar
+        jar = MozillaCookieJar()
+        jar.load(cookie_file, ignore_discard=True, ignore_expires=True)
+    resp = requests.get(url, headers=headers, cookies=jar, timeout=20, allow_redirects=True)
     resp.raise_for_status()
     if "/authwall" in resp.url or "/login" in resp.url:
         raise ValueError("LinkedIn requires login for this post")

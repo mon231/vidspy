@@ -4,6 +4,11 @@ Public API (all arguments/returns are plain strings, JSON where structured):
 
     resolve(text)                       -> JSON {"platform", "items": [...]}
     download(item_json, dest_dir)       -> absolute path of the downloaded file
+
+    configure(data_dir)                 -> where linked-account cookies are stored
+    accounts_list()                     -> JSON [{"platform", "label", "connected", "help", ...}]
+    account_connect(platform, text)     -> JSON status (text: cookies.txt / JSON export / Cookie header)
+    account_disconnect(platform)        -> JSON status
 """
 import hashlib
 import json
@@ -11,19 +16,11 @@ import os
 import re
 from urllib.parse import urlparse
 
-from . import extractors as ex
+from . import accounts, extractors as ex, platforms
+from .errors import VidspyError
+from .platforms import detect_platform
+from .reddit import reddit_extract
 
-
-class VidspyError(Exception):
-    """Error with a message safe to show to the user."""
-
-
-PLATFORM_DOMAINS = {
-    "instagram": ("instagram.com", "instagr.am"),
-    "tiktok": ("tiktok.com",),
-    "linkedin": ("linkedin.com", "lnkd.in"),
-    "youtube": ("youtube.com", "youtu.be", "youtube-nocookie.com"),
-}
 
 # Extractors tried in order for each platform; first non-empty result wins.
 PLATFORM_EXTRACTORS = {
@@ -31,6 +28,11 @@ PLATFORM_EXTRACTORS = {
     "tiktok": (ex.ytdlp_extract, ex.gallerydl_extract),
     "linkedin": (ex.html_extract,),
     "youtube": (ex.ytdlp_extract,),
+    "twitter": (ex.ytdlp_extract, ex.gallerydl_extract),   # videos/GIFs, then photo tweets
+    "facebook": (ex.ytdlp_extract, ex.gallerydl_extract),
+    "reddit": (reddit_extract, ex.ytdlp_extract, ex.gallerydl_extract),     # videos, then image posts/galleries
+    "pinterest": (ex.ytdlp_extract, ex.gallerydl_extract),  # video pins, then image pins
+    "vimeo": (ex.ytdlp_extract, ex.vimeo_player_extract),
     "hls": (ex.hls_extract,),  # any direct .m3u8 link
 }
 
@@ -45,25 +47,16 @@ def extract_url(text):
     """Pull the first http(s) URL out of shared text like 'Check this https://...'."""
     m = _URL_RE.search(text or "")
     if not m:
-        raise VidspyError("No link found. Paste an Instagram, TikTok, LinkedIn, YouTube or .m3u8 link.")
+        raise VidspyError("No link found. Paste a link from a supported site (Instagram, TikTok, YouTube, X, ...).")
     return m.group(0).rstrip(".,;)")
-
-
-def detect_platform(url):
-    host = (urlparse(url).hostname or "").lower()
-    for name, domains in PLATFORM_DOMAINS.items():
-        if any(host == d or host.endswith("." + d) for d in domains):
-            return name
-    if (urlparse(url).path or "").lower().endswith(".m3u8"):
-        return "hls"
-    return None
 
 
 def resolve(text):
     url = extract_url(text)
     platform = detect_platform(url)
     if platform is None:
-        raise VidspyError("Unsupported link. Supported: Instagram, TikTok, LinkedIn, YouTube, .m3u8 playlists.")
+        names = ", ".join(i["label"] for i in platforms.PLATFORMS.values())
+        raise VidspyError(f"Unsupported link. Supported: {names}, .m3u8 playlists.")
 
     errors = []
     for extractor in PLATFORM_EXTRACTORS[platform]:
@@ -75,6 +68,9 @@ def resolve(text):
         if items:
             return json.dumps({"platform": platform, "url": url, "items": items})
     detail = errors[0] if errors else "no media found"
+    if platform == "reddit" and any("Reddit API" in e or "HTTP 403" in e for e in errors):
+        raise VidspyError("Reddit blocked this app's request (\"blocked by network security\"). "
+                          "This is not a login problem: Reddit rejects non-browser clients on this network.")
     raise VidspyError(f"Could not get media from {platform} link ({detail}). "
                       "The post may be private or require login.")
 
@@ -117,3 +113,21 @@ def download(item_json, dest_dir):
     except requests.RequestException as e:
         raise VidspyError(f"Download failed: {e}")
     return path
+
+
+# ---- linked accounts (implemented once in accounts.py; UIs just call these) ---------------
+
+def configure(data_dir):
+    accounts.configure(data_dir)
+
+
+def accounts_list():
+    return json.dumps(accounts.list_accounts())
+
+
+def account_connect(platform, text):
+    return json.dumps(accounts.connect(platform, text))
+
+
+def account_disconnect(platform):
+    return json.dumps(accounts.disconnect(platform))

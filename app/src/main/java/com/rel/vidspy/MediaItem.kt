@@ -11,6 +11,7 @@ data class MediaItem(
     val title: String,
     val headers: Map<String, String>,
     val raw: String,
+    val note: String? = null,
 )
 
 data class ResolvedPost(val platform: String, val items: List<MediaItem>)
@@ -28,6 +29,7 @@ fun parseResolvedPost(json: String): ResolvedPost {
             title = o.optString("title", "vidspy"),
             headers = headers,
             raw = o.toString(),
+            note = o.optString("note").ifEmpty { null },
         )
     }
     return ResolvedPost(root.getString("platform"), items)

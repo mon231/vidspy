@@ -21,6 +21,15 @@ def _ext_from_url(url, default):
     return m.group(1).lower() if m else default
 
 
+MAX_MERGE_HEIGHT = 720  # streams that must be downloaded and merged before playing: keep them phone-sized
+
+
+def _cap(formats):
+    """Formats up to MAX_MERGE_HEIGHT; all of them if none is that small."""
+    small = [f for f in formats if (f.get("height") or 0) <= MAX_MERGE_HEIGHT]
+    return small or formats
+
+
 def _best_progressive(formats):
     """Pick the best single-file http(s) format. Android has no ffmpeg, so
     streams that need muxing (separate audio/video, HLS, DASH) are skipped."""
@@ -45,15 +54,72 @@ def _best_hls(formats):
     ok = [f for f in formats
           if f.get("url") and (f.get("protocol") or "").startswith("m3u8") and f.get("vcodec") != "none"]
     ok.sort(key=lambda f: (f.get("acodec") != "none", f.get("height") or 0, f.get("tbr") or 0), reverse=True)
-    for f in ok:
+    for f in _cap(ok):
         session = requests.Session()
         session.headers.update(f.get("http_headers") or {})
         try:
-            hls.check_playlist(session, f["url"])
+            hls.playable(session, f["url"])
             return f
         except Exception:  # noqa: BLE001 - unusable rendition, try the next one
             continue
     return None
+
+
+def _is_audio_only(f):
+    return bool(f.get("url") and f.get("vcodec") == "none" and f.get("acodec") != "none"
+                and not str(f.get("format_id", "")).endswith("-drc"))
+
+
+def _pair_mp4(formats):
+    """(video-only mp4, m4a audio) over plain http(s), to be merged by `mux.py`; None if not available."""
+    video = [f for f in formats
+             if f.get("url") and f.get("protocol") in ("http", "https") and f.get("ext") == "mp4"
+             and f.get("vcodec") not in (None, "none") and f.get("acodec") in (None, "none")]
+    video = _cap(video)
+    audio = [f for f in formats
+             if _is_audio_only(f) and f.get("protocol") in ("http", "https") and f.get("ext") in ("m4a", "mp4")]
+    if not video or not audio:
+        return None
+    video.sort(key=lambda f: (f.get("height") or 0, f.get("tbr") or 0))
+    audio.sort(key=lambda f: f.get("abr") or f.get("tbr") or 0)
+    return video[-1], audio[-1]
+
+
+def _hls_audio(formats):
+    """Best separate HLS audio rendition that the player can use."""
+    import requests
+    from . import hls
+
+    ok = [f for f in formats if _is_audio_only(f) and (f.get("protocol") or "").startswith("m3u8")]
+    ok.sort(key=lambda f: f.get("abr") or f.get("tbr") or 0, reverse=True)
+    for f in ok:
+        session = requests.Session()
+        session.headers.update(f.get("http_headers") or {})
+        try:
+            hls.playable(session, f["url"])
+            return f
+        except Exception:  # noqa: BLE001
+            continue
+    return None
+
+
+def _choose(formats):
+    """Pick (format, audio format or None, is_hls). Never returns a silent video if a sound
+    source exists: audio is either inside the format or merged from a second one."""
+    best = _best_progressive(formats)
+    if best is not None and best.get("acodec") != "none":
+        return best, None, False
+    pair = _pair_mp4(formats)
+    if pair:
+        return pair[0], pair[1], False
+    stream = _best_hls(formats)
+    if stream is not None:
+        if stream.get("acodec") != "none":
+            return stream, None, True
+        audio = _hls_audio(formats)
+        if audio:
+            return stream, audio, True
+    return best, None, False
 
 
 def ytdlp_extract(url):
@@ -75,13 +141,9 @@ def ytdlp_extract(url):
         entries = [e for e in (info.get("entries") or [info]) if e]
         items = []
         for entry in entries:
-            fmt = _best_progressive(entry.get("formats") or [])
+            fmt, audio, hls = _choose(entry.get("formats") or [])
             if fmt is None and entry.get("protocol") in ("http", "https") and entry.get("url"):
                 fmt = entry
-            hls = False
-            if fmt is None:
-                fmt = _best_hls(entry.get("formats") or [])
-                hls = fmt is not None
             if fmt is None:
                 continue
             media_url = fmt["url"]
@@ -93,16 +155,20 @@ def ytdlp_extract(url):
             except Exception:
                 pass
             ext = "m3u8" if hls else (fmt.get("ext") or _ext_from_url(media_url, "mp4"))
-            items.append({
+            silent = fmt.get("acodec") == "none" and audio is None
+            item = {
                 "type": _kind(ext),
                 "url": media_url,
                 "ext": ext,
                 "title": entry.get("title") or entry.get("id") or "video",
                 "thumbnail": entry.get("thumbnail"),
                 "headers": headers,
-                # e.g. Reddit serves audio separately; merging needs ffmpeg, which is not on device
-                "note": "No sound: this site serves audio separately" if fmt.get("acodec") == "none" and not hls else None,
-            })
+                "note": "No sound: no audio track available" if silent else None,
+            }
+            if audio:
+                item["audio"] = {"url": audio["url"], "ext": "m3u8" if hls else (audio.get("ext") or "m4a"),
+                                 "headers": dict(audio.get("http_headers") or headers)}
+            items.append(item)
         return items[:MAX_ITEMS]
 
 
@@ -246,7 +312,7 @@ def hls_extract(url):
     headers = {"User-Agent": DEFAULT_UA}
     session = requests.Session()
     session.headers.update(headers)
-    hls.check_playlist(session, url)
+    hls.playable(session, url)
     name = url.split("?")[0].rstrip("/").rsplit("/", 1)[-1].rsplit(".", 1)[0] or "stream"
     return [{"type": "video", "url": url, "ext": "m3u8", "title": name, "thumbnail": None,
              "headers": headers}]

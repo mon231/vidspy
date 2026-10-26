@@ -13,7 +13,7 @@ Android app. Paste (or share) a social-media link, **watch it directly** in the 
 
 | Feature | Notes |
 |---|---|
-| Direct watch | Streams the CDN URL in a `VideoView`. Falls back to a cached download if the player rejects the stream. |
+| Direct watch | Streams the CDN URL with Media3 ExoPlayer (seek bar, 0.5x-2x speed, mute). Only a sliding window around the playback position is buffered, so huge files and live HLS work. A separate audio stream is merged on the fly (`MergingMediaSource`); desktop syncs a second `<audio>` element. |
 | Download | Saves to `Movies/vidspy` (video) or `Pictures/vidspy` (image) through MediaStore. |
 | Download all | Saves every item of a carousel / multi-media post. |
 | Share target | Share a link from the Instagram / TikTok / LinkedIn app straight to vidspy. |
@@ -77,7 +77,7 @@ First extractor returning media wins; errors fall through to the next.
 
 LinkedIn has no yt-dlp extractor for public posts, so vidspy reads `<video data-sources>` / `og:video` / `og:image` from the public post page itself.
 
-Android has no ffmpeg, so vidspy never muxes. It prefers single-file progressive HTTP formats and falls back to HLS. HLS is downloaded by `hls.py`: parse with [`m3u8`](https://github.com/globocom/m3u8), pick the highest-bandwidth variant, concatenate segments into `.ts` (or `.mp4` for fragmented-MP4 playlists). Separate-audio HLS variants, DASH and AES-encrypted HLS are not supported. YouTube mostly offers progressive formats only up to 360p, so expect low quality there.
+Viewing never resolves or downloads the whole media. Downloads of a video plus separate audio are merged by `mux.py`, a pure-Python MP4 remuxer (no ffmpeg, no re-encode). Live streams can be watched, not downloaded. It prefers single-file progressive HTTP formats and falls back to HLS. HLS is downloaded by `hls.py`: parse with [`m3u8`](https://github.com/globocom/m3u8), pick the highest-bandwidth variant, concatenate segments into `.ts` (or `.mp4` for fragmented-MP4 playlists). Separate-audio HLS downloads need fMP4 audio; DRM is refused. YouTube mostly offers progressive formats only up to 360p, so expect low quality there.
 
 ## Libraries
 
@@ -163,7 +163,7 @@ An eye (spy) with a play button as the iris. `python assets/make_icons.py` regen
 - Without a linked account Vimeo, Reddit (currently), Facebook and X often login-wall posts, so link an account for them;
 - Reddit serves video and audio as separate streams. Merging needs ffmpeg, so Reddit videos play without sound (the app shows a note); private accounts, age/region-gated and login-walled posts fail. Instagram increasingly login-walls anonymous requests; expect failures there.
 - LinkedIn scraping depends on the public page markup and may break.
-- Live HLS streams download only the segments currently listed. Stories, live streams and profile/playlist links are not supported (only single posts).
+- Live HLS streams can be watched but not downloaded. Stories and profile/playlist links are not supported (only single posts).
 - Use only for content you have the right to save. Respect each platform's terms and creators' copyright.
 
 ## Roadmap

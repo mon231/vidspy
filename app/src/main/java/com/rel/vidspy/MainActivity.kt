@@ -6,10 +6,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
-import android.media.MediaPlayer
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
@@ -18,13 +18,15 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageView
+import android.widget.PopupMenu
 import android.widget.ProgressBar
+import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
-import android.widget.VideoView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.media3.ui.PlayerView
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
 import kotlinx.coroutines.CoroutineScope
@@ -46,18 +48,29 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvInfo: TextView
     private lateinit var tvCounter: TextView
     private lateinit var progress: ProgressBar
-    private lateinit var videoView: VideoView
+    private lateinit var playerView: PlayerView
+    private lateinit var player: VideoPlayer
     private lateinit var imageView: ImageView
     private lateinit var navLayout: View
     private lateinit var controlLayout: View
     private lateinit var downloadLayout: View
     private lateinit var btnMute: Button
+    private lateinit var btnPlay: Button
+    private lateinit var btnSpeed: Button
+    private lateinit var seekBar: SeekBar
+    private lateinit var tvTime: TextView
 
     private var post: ResolvedPost? = null
     private var index = 0
-    private var mediaPlayer: MediaPlayer? = null
-    private var isMuted = false
     private var showJob: Job? = null
+    private var dragging = false
+    private val handler = Handler(Looper.getMainLooper())
+    private val ticker = object : Runnable {
+        override fun run() {
+            updateProgress()
+            handler.postDelayed(this, 250)
+        }
+    }
     private var pendingSave: (() -> Unit)? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -72,12 +85,28 @@ class MainActivity : AppCompatActivity() {
         tvInfo = findViewById(R.id.tvInfo)
         tvCounter = findViewById(R.id.tvCounter)
         progress = findViewById(R.id.progress)
-        videoView = findViewById(R.id.videoView)
+        playerView = findViewById(R.id.playerView)
+        player = VideoPlayer(this, playerView, object : VideoPlayer.Events {
+            override fun onBuffering(buffering: Boolean) = setBusy(buffering)
+
+            override fun onEnded() {
+                btnPlay.text = "Play"
+            }
+
+            override fun onError(message: String) {
+                setBusy(false)
+                toast(message, long = true)
+            }
+        })
         imageView = findViewById(R.id.imageView)
         navLayout = findViewById(R.id.navLayout)
         controlLayout = findViewById(R.id.controlLayout)
         downloadLayout = findViewById(R.id.downloadLayout)
         btnMute = findViewById(R.id.btnMute)
+        btnPlay = findViewById(R.id.btnPlay)
+        btnSpeed = findViewById(R.id.btnSpeed)
+        seekBar = findViewById(R.id.seekBar)
+        tvTime = findViewById(R.id.tvTime)
 
         findViewById<Button>(R.id.button).setOnClickListener { fetch() }
         findViewById<Button>(R.id.btnPaste).setOnClickListener { paste() }
@@ -152,52 +181,28 @@ class MainActivity : AppCompatActivity() {
         showJob?.cancel()
         stopVideo()
         imageView.visibility = View.GONE
-        videoView.visibility = View.GONE
+        playerView.visibility = View.GONE
         controlLayout.visibility = View.GONE
         navLayout.visibility = if (p.items.size > 1) View.VISIBLE else View.GONE
         tvCounter.text = "${index + 1} / ${p.items.size}"
         tvInfo.text = "${p.platform} · ${item.title}" + (item.note?.let { "\n$it" } ?: "")
         setBusy(true)
 
+        if (item.type == MediaType.VIDEO) {
+            playerView.visibility = View.VISIBLE
+            controlLayout.visibility = View.VISIBLE
+            btnPlay.text = "Pause"
+            player.play(item)
+            return
+        }
         showJob = scope.launch {
             try {
-                if (item.type == MediaType.VIDEO) playVideo(item) else showImage(item)
+                showImage(item)
             } catch (e: Exception) {
                 toast(errorText(e), long = true)
                 setBusy(false)
             }
         }
-    }
-
-    /** Direct watch: stream the CDN url. If the player rejects it, fall back to a cached download. */
-    private fun playVideo(item: MediaItem, fromCache: File? = null) {
-        videoView.visibility = View.VISIBLE
-        controlLayout.visibility = View.VISIBLE
-        videoView.setOnPreparedListener { mp ->
-            mediaPlayer = mp
-            applyMute()
-            setBusy(false)
-            videoView.start()
-        }
-        videoView.setOnErrorListener { _, _, _ ->
-            if (fromCache == null) {
-                showJob = scope.launch {
-                    try {
-                        val file = withContext(Dispatchers.IO) { backend.download(item, cacheRoot) }
-                        playVideo(item, file)
-                    } catch (e: Exception) {
-                        toast(errorText(e), long = true)
-                        setBusy(false)
-                    }
-                }
-            } else {
-                toast("Cannot play this video")
-                setBusy(false)
-            }
-            true
-        }
-        if (fromCache != null) videoView.setVideoPath(fromCache.path)
-        else videoView.setVideoURI(Uri.parse(item.url), item.headers)
     }
 
     private suspend fun showImage(item: MediaItem) {
@@ -221,25 +226,76 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun stopVideo() {
-        videoView.stopPlayback()
-        mediaPlayer = null
+        player.release()
+        seekBar.progress = 0
+        tvTime.text = "0:00 / 0:00"
     }
 
     private fun setupControls() {
-        findViewById<Button>(R.id.btnPlay).setOnClickListener { if (!videoView.isPlaying) videoView.start() }
-        findViewById<Button>(R.id.btnPause).setOnClickListener { if (videoView.isPlaying) videoView.pause() }
-        findViewById<Button>(R.id.btnStop).setOnClickListener { videoView.pause(); videoView.seekTo(0) }
-        btnMute.setOnClickListener {
-            isMuted = !isMuted
-            applyMute()
+        btnPlay.setOnClickListener {
+            player.toggle()
+            btnPlay.text = if (player.isPlaying) "Pause" else "Play"
         }
+        findViewById<Button>(R.id.btnStop).setOnClickListener {
+            player.stop()
+            btnPlay.text = "Play"
+        }
+        btnSpeed.setOnClickListener { showSpeedMenu() }
+        btnMute.setOnClickListener {
+            player.muted = !player.muted
+            btnMute.text = if (player.muted) "Unmute" else "Mute"
+        }
+        seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(bar: SeekBar, progress: Int, fromUser: Boolean) {
+                if (fromUser) tvTime.text = "${clock(progress)} / ${clock(player.duration)}"
+            }
+
+            override fun onStartTrackingTouch(bar: SeekBar) {
+                dragging = true
+            }
+
+            override fun onStopTrackingTouch(bar: SeekBar) {
+                dragging = false
+                player.seekTo(bar.progress)
+            }
+        })
+        handler.post(ticker)
     }
 
-    private fun applyMute() {
-        val v = if (isMuted) 0f else 1f
-        mediaPlayer?.setVolume(v, v)
-        btnMute.text = if (isMuted) "Unmute" else "Mute"
+    private fun updateProgress() {
+        if (dragging || !player.active) return
+        btnPlay.text = if (player.isPlaying) "Pause" else "Play"
+        if (player.isLive) {
+            seekBar.isEnabled = false
+            tvTime.text = "LIVE"
+            return
+        }
+        val duration = player.duration
+        if (duration <= 0) return
+        seekBar.isEnabled = true
+        seekBar.max = duration
+        seekBar.progress = player.position
+        tvTime.text = "${clock(player.position)} / ${clock(duration)}"
     }
+
+    private fun clock(ms: Int): String {
+        val total = (ms / 1000).coerceAtLeast(0)
+        return "%d:%02d".format(total / 60, total % 60)
+    }
+
+    private fun showSpeedMenu() {
+        val menu = PopupMenu(this, btnSpeed)
+        val speeds = floatArrayOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)
+        speeds.forEachIndexed { i, s -> menu.menu.add(0, i, i, speedLabel(s)) }
+        menu.setOnMenuItemClickListener {
+            player.speed = speeds[it.itemId]
+            btnSpeed.text = speedLabel(player.speed)
+            true
+        }
+        menu.show()
+    }
+
+    private fun speedLabel(s: Float) = "${if (s == s.toInt().toFloat()) s.toInt().toString() else s.toString()}x"
 
     private fun downloadCurrent() {
         val p = post ?: return
@@ -298,10 +354,17 @@ class MainActivity : AppCompatActivity() {
     /** Python errors look like "vidspy_backend.api.VidspyError: message"; show just the message. */
     private fun errorText(e: Exception) = (e.message ?: "Unknown error").substringAfter("VidspyError: ")
 
+    override fun onStop() {
+        super.onStop()
+        player.pause()
+        btnPlay.text = "Play"
+    }
+
     override fun onDestroy() {
         super.onDestroy()
+        handler.removeCallbacks(ticker)
         scope.cancel()
-        stopVideo()
+        player.release()
         cacheRoot.deleteRecursively()
     }
 }

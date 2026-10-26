@@ -69,39 +69,52 @@ def _slug(text, limit=40):
     return (s[:limit] or "vidspy")
 
 
-def download(item_json, dest_dir):
+def _http_get(url, headers, base, ext, kind):
     import requests
+
+    with requests.get(url, headers=headers, stream=True, timeout=30) as resp:
+        resp.raise_for_status()
+        ext = ext or _CONTENT_TYPE_EXT.get(
+            resp.headers.get("Content-Type", "").split(";")[0].strip(), "mp4" if kind == "video" else "jpg")
+        path = f"{base}.{ext}"
+        with open(path, "wb") as f:
+            for chunk in resp.iter_content(chunk_size=64 * 1024):
+                f.write(chunk)
+    return path
+
+
+def download(item_json, dest_dir):
+    """Download one item and return its path. A separate audio stream (item["audio"]) is merged in."""
+    import requests
+    from . import hls, mux
 
     item = json.loads(item_json)
     os.makedirs(dest_dir, exist_ok=True)
     headers = {"User-Agent": ex.DEFAULT_UA}
     headers.update(item.get("headers") or {})
-
-    if item.get("ext") == "m3u8":  # HLS: fetch + concatenate segments (no ffmpeg)
-        from . import hls
-        digest = hashlib.sha1(item["url"].encode()).hexdigest()[:8]
-        session = requests.Session()
-        session.headers.update(headers)
-        try:
-            return hls.download_hls(session, item["url"],
-                                    os.path.join(dest_dir, f"{_slug(item.get('title'))}_{digest}"))
-        except (requests.RequestException, hls.HlsError) as e:
-            raise VidspyError(f"Download failed: {e}")
+    digest = hashlib.sha1(item["url"].encode()).hexdigest()[:8]
+    base = os.path.join(dest_dir, f"{_slug(item.get('title'))}_{digest}")
+    audio = item.get("audio")
 
     try:
-        with requests.get(item["url"], headers=headers, stream=True, timeout=30) as resp:
-            resp.raise_for_status()
-            ext = item.get("ext") or _CONTENT_TYPE_EXT.get(
-                resp.headers.get("Content-Type", "").split(";")[0].strip(),
-                "mp4" if item.get("type") == "video" else "jpg")
-            digest = hashlib.sha1(item["url"].encode()).hexdigest()[:8]
-            path = os.path.join(dest_dir, f"{_slug(item.get('title'))}_{digest}.{ext}")
-            with open(path, "wb") as f:
-                for chunk in resp.iter_content(chunk_size=64 * 1024):
-                    f.write(chunk)
-    except requests.RequestException as e:
+        if item.get("ext") == "m3u8":
+            session = requests.Session()
+            session.headers.update(headers)
+            return hls.download_hls(session, item["url"], base, audio["url"] if audio else None)
+        if not audio:
+            return _http_get(item["url"], headers, base, item.get("ext"), item.get("type"))
+
+        audio_headers = {"User-Agent": ex.DEFAULT_UA}
+        audio_headers.update(audio.get("headers") or {})
+        parts = [_http_get(item["url"], headers, base + ".video", item.get("ext"), "video"),
+                 _http_get(audio["url"], audio_headers, base + ".audio", audio.get("ext") or "m4a", "audio")]
+        try:
+            return mux.mux_mp4(parts[0], parts[1], base + ".mp4")
+        finally:
+            for part in parts:
+                os.remove(part)
+    except (requests.RequestException, hls.HlsError, mux.MuxError) as e:
         raise VidspyError(f"Download failed: {e}")
-    return path
 
 
 def configure(data_dir):

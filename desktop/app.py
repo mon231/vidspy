@@ -27,10 +27,10 @@ DOWNLOAD_DIR = os.path.join(os.path.expanduser("~"), "Downloads", "vidspy")
 _items = {}  # id -> item dict; lets the browser stream via /media/<id> with the right headers
 
 
-def rewrite_playlist(text, base_url, item_id):
+def rewrite_playlist(text, base_url, item_id, audio=False):
     """Point every URI of an HLS playlist back at /media/<id>?u=<abs url> so segments get the item's headers."""
     def proxied(uri):
-        return f"/media/{item_id}?u=" + quote(urljoin(base_url, uri), safe="")
+        return f"/media/{item_id}?u=" + quote(urljoin(base_url, uri), safe="") + ("&a=1" if audio else "")
 
     out = []
     for line in text.splitlines():
@@ -48,6 +48,8 @@ def _resolve(text):
         item["id"] = uuid.uuid4().hex
         _items[item["id"]] = item
         item["stream"] = f"/media/{item['id']}"
+        if item.get("audio"):
+            item["audio_stream"] = f"/media/{item['id']}?a=1"
     return post
 
 
@@ -63,17 +65,19 @@ def main_gui():
         item = _items.get(item_id)
         if item is None:
             btl.abort(404)
+        audio = bool(btl.request.query.get("a") and item.get("audio"))
+        stream = item["audio"] if audio else item
         headers = {"User-Agent": extractors.DEFAULT_UA}
-        headers.update(item.get("headers") or {})
+        headers.update(stream.get("headers") or {})
         if btl.request.headers.get("Range"):
             headers["Range"] = btl.request.headers["Range"]
-        target = btl.request.query.get("u") or item["url"]  # HLS segments/variants arrive via ?u=
+        target = btl.request.query.get("u") or stream["url"]  # HLS segments/variants arrive via ?u=
         if not target.startswith(("http://", "https://")):
             btl.abort(400)
         upstream = requests.get(target, headers=headers, stream=True, timeout=30)
         ctype = upstream.headers.get("Content-Type", "")
         if ".m3u8" in target.split("?")[0].lower() or "mpegurl" in ctype.lower():
-            body = rewrite_playlist(upstream.text, upstream.url, item_id)
+            body = rewrite_playlist(upstream.text, upstream.url, item_id, audio)
             return btl.HTTPResponse(body, status=upstream.status_code,
                                     headers={"Content-Type": "application/vnd.apple.mpegurl"})
         resp = btl.HTTPResponse(status=upstream.status_code)

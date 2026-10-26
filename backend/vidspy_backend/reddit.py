@@ -6,6 +6,8 @@ from . import accounts, hls
 from .browser import CHROME_HEADERS, chrome_session
 from .errors import VidspyError
 
+MAX_HEIGHT = 720
+
 
 def _unescape(url):
     return html.unescape(url) if url else url
@@ -23,8 +25,36 @@ def _post_json_url(url):
     return f"https://www.reddit.com/comments/{m.group(1)}/.json"
 
 
-def parse_post(post):
-    """Turn a Reddit post dict (listing child `data`) into vidspy media items."""
+def dash_item(session, video_id, title, thumb, headers):
+    """Video item for a v.redd.it video: its DASH MP4s (video and audio are separate files)."""
+    from xml.etree import ElementTree
+
+    base = f"https://v.redd.it/{video_id}/"
+    resp = session.get(base + "DASHPlaylist.mpd", timeout=30)
+    resp.raise_for_status()
+    reps = {"video": [], "audio": []}
+    for rep in ElementTree.fromstring(resp.text).iter():
+        if rep.tag.rpartition("}")[2] != "Representation":
+            continue
+        name = next((c.text for c in rep if c.tag.rpartition("}")[2] == "BaseURL"), None)
+        kind = (rep.get("mimeType") or "").split("/")[0]
+        if name and kind in reps:
+            reps[kind].append((int(rep.get("height") or 0), int(rep.get("bandwidth") or 0), name))
+    if not reps["video"]:
+        raise VidspyError("No DASH video found")
+    small = [r for r in reps["video"] if r[0] <= MAX_HEIGHT] or reps["video"]
+    item = {"type": "video", "url": base + max(small)[2], "ext": "mp4", "title": title,
+            "thumbnail": thumb, "headers": headers}
+    if reps["audio"]:
+        item["audio"] = {"url": base + max(reps["audio"], key=lambda r: r[1])[2], "ext": "mp4", "headers": headers}
+    return item
+
+
+def parse_post(post, session=None):
+    """Turn a Reddit post dict (listing child `data`) into vidspy media items.
+
+    With a `session`, videos are fetched as DASH MP4s (video + audio merged on download);
+    otherwise the HLS playlist is used."""
     post = (post.get("crosspost_parent_list") or [post])[0]
     title = post.get("title") or "reddit"
     headers = dict(CHROME_HEADERS)
@@ -40,10 +70,18 @@ def parse_post(post):
     video = (post.get("secure_media") or post.get("media") or {}).get("reddit_video") or \
         ((post.get("preview") or {}).get("reddit_video_preview"))
     if video:
-        if video.get("hls_url"):  # HLS carries audio + video
+        link = _unescape(video.get("fallback_url") or video.get("hls_url") or "")
+        vid = re.search(r"v\.redd\.it/(\w+)/", link)
+        if session and vid:
+            try:
+                items.append(dash_item(session, vid.group(1), title, thumb, headers))
+                return items
+            except Exception:  # noqa: BLE001 - fall back to the playlist below
+                pass
+        if video.get("hls_url"):
             add("video", _unescape(video["hls_url"]), "m3u8", thumb)
         elif video.get("fallback_url"):
-            add("video", _unescape(video["fallback_url"]), "mp4", thumb, "No sound: Reddit serves audio separately")
+            add("video", _unescape(video["fallback_url"]), "mp4", thumb, "No sound: no audio track available")
         return items
 
     meta = post.get("media_metadata") or {}
@@ -83,9 +121,14 @@ def parse_rss(xml, session=None):
     headers = dict(CHROME_HEADERS)
     vid = re.match(r"https?://v\.redd\.it/(\w+)", target)
     if vid:
+        if session is not None:
+            try:
+                return [dash_item(session, vid.group(1), title, thumb, headers)]
+            except Exception:  # noqa: BLE001 - fall back to the playlist below
+                pass
         playlist = f"https://v.redd.it/{vid.group(1)}/HLSPlaylist.m3u8"
         if session is not None:
-            hls.check_playlist(session, playlist)
+            hls.playable(session, playlist)
         return [{"type": "video", "url": playlist, "ext": "m3u8", "title": title, "thumbnail": thumb, "headers": headers}]
     if re.match(r"https?://i\.redd\.it/", target):
         return [{"type": "image", "url": target, "ext": _ext(target, "jpg"), "title": title,
@@ -99,7 +142,7 @@ def reddit_extract(url):
     resp = session.get(_post_json_url(url), headers={"Accept": "application/json"}, timeout=30)
     if resp.status_code == 200 and "json" in resp.headers.get("content-type", ""):
         children = resp.json()[0]["data"]["children"]
-        items = parse_post(children[0]["data"]) if children else []
+        items = parse_post(children[0]["data"], session) if children else []
         if items:
             return items
     # anonymous clients get no .json: the Atom feed is still served

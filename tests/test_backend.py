@@ -145,7 +145,7 @@ def test_hls_rejects_non_playlist_and_encrypted(tmp_path):
 
 def test_yt_dlp_hls_fallback_when_no_progressive(monkeypatch):
     from vidspy_backend import hls
-    monkeypatch.setattr(hls, "check_playlist", lambda session, url: None)
+    monkeypatch.setattr(hls, "playable", lambda session, url: None)
     formats = [{"url": "h", "protocol": "m3u8_native", "vcodec": "h264", "acodec": "aac", "height": 720},
                {"url": "l", "protocol": "m3u8_native", "vcodec": "h264", "acodec": "aac", "height": 360}]
     assert ex._best_progressive(formats) is None
@@ -326,14 +326,14 @@ def test_chrome_session_headers_and_cipher_order():
     assert browser.CHROME_CIPHERS.startswith("TLS_AES_128_GCM_SHA256")
 
 
-def test_hls_fallback_skips_encrypted_renditions(monkeypatch):
+def test_hls_fallback_skips_drm_renditions(monkeypatch):
     from vidspy_backend import hls
 
     def check(session, url):
         if url == "drm":
-            raise hls.HlsError("Encrypted HLS streams are not supported")
+            raise hls.HlsError("This stream is DRM-protected")
 
-    monkeypatch.setattr(hls, "check_playlist", check)
+    monkeypatch.setattr(hls, "playable", check)
     formats = [{"url": "drm", "protocol": "m3u8_native", "vcodec": "h264", "acodec": "aac", "height": 1080},
                {"url": "clear", "protocol": "m3u8_native", "vcodec": "h264", "acodec": "aac", "height": 360}]
     assert ex._best_hls(formats)["url"] == "clear"

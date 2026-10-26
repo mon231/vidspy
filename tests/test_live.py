@@ -40,6 +40,7 @@ SAMPLES = {
             "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"],
 }
 NO_DOWNLOAD = {"hls"}  # long streams: resolving already validates the playlist
+WITH_SOUND = {"youtube", "vimeo", "tiktok", "linkedin", "twitter", "facebook", "reddit"}  # sample posts that have audio
 
 
 @pytest.fixture(autouse=True)
@@ -78,3 +79,5 @@ def test_anonymous_public_video(platform, tmp_path):
         return
     path = backend.download(json.dumps(video), str(tmp_path))
     assert os.path.getsize(path) > 10_000, path
+    if platform in WITH_SOUND:
+        assert backend.mux.track_samples(path, b"soun"), f"downloaded video has no sound: {path}"

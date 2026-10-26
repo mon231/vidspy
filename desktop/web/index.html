@@ -65,7 +65,17 @@
     <div class="row" style="justify-content:flex-end;margin:8px 0 0"><button id="closeSettings" class="secondary">Close</button></div>
   </dialog>
 <script>
-let post = null, idx = 0;
+let post = null, idx = 0, speed = 1;
+function speedPicker(video) {
+  const label = document.createElement('label');
+  label.style.cssText = 'display:block;margin-top:8px;color:#aaa;font-size:13px';
+  label.textContent = 'Speed ';
+  const select = document.createElement('select');
+  for (const s of [0.5, 0.75, 1, 1.25, 1.5, 2]) select.add(new Option(s + 'x', s, false, s === speed));
+  select.onchange = () => { speed = parseFloat(select.value); video.playbackRate = speed; };
+  label.append(select);
+  return label;
+}
 const $ = id => document.getElementById(id);
 const status = (msg, err) => { $('status').textContent = msg || ''; $('status').className = err ? 'err' : ''; };
 
@@ -78,21 +88,47 @@ async function go() {
   post = r.post; idx = 0; status(''); show();
 }
 
+function attach(el, src, isHls) {
+  if (isHls && window.Hls && Hls.isSupported()) {
+    const hls = new Hls(); hls.loadSource(src); hls.attachMedia(el);
+    hls.on(Hls.Events.ERROR, (_, d) => d.fatal && status('Cannot play this stream', true));
+  } else {
+    el.src = src;  // mp4/images, or native HLS (Safari)
+  }
+}
+
+// The sound can be a separate stream (YouTube, Reddit, ...): play it in an <audio> that follows the video.
+function followVideo(video, audio) {
+  const jump = () => { if (Math.abs(audio.currentTime - video.currentTime) > 0.3) audio.currentTime = video.currentTime; };
+  video.addEventListener('play', () => { jump(); audio.play(); });
+  video.addEventListener('playing', () => { jump(); audio.play(); });
+  video.addEventListener('pause', () => audio.pause());
+  video.addEventListener('waiting', () => audio.pause());
+  video.addEventListener('seeked', jump);
+  video.addEventListener('timeupdate', jump);
+  video.addEventListener('ratechange', () => { audio.playbackRate = video.playbackRate; });
+  video.addEventListener('volumechange', () => { audio.volume = video.volume; audio.muted = video.muted; });
+}
+
 function show() {
   const item = post.items[idx];
   $('nav').style.display = 'flex';
   $('counter').textContent = `${idx + 1} / ${post.items.length}`;
   $('info').textContent = `${post.platform} · ${item.title}` + (item.note ? `\n${item.note}` : '');
   const el = document.createElement(item.type === 'video' ? 'video' : 'img');
-  if (item.type === 'video') { el.controls = true; el.autoplay = true; }
-  if (item.ext === 'm3u8' && window.Hls && Hls.isSupported()) {
-    const hls = new Hls(); hls.loadSource(item.stream); hls.attachMedia(el);
-    hls.on(Hls.Events.ERROR, (_, d) => d.fatal && status('Cannot play this stream', true));
-  } else {
-    el.src = item.stream;  // mp4/images, or native HLS (Safari)
-  }
+  if (item.type === 'video') { el.controls = true; el.autoplay = true; el.playbackRate = speed; }
+  attach(el, item.stream, item.ext === 'm3u8');
   el.onerror = () => status('Cannot play/show this media', true);
   $('viewer').replaceChildren(el);
+  if (item.type !== 'video') return;
+  el.addEventListener('loadedmetadata', () => { el.playbackRate = speed; });
+  if (item.audio_stream) {
+    const audio = document.createElement('audio');
+    attach(audio, item.audio_stream, item.audio.ext === 'm3u8');
+    followVideo(el, audio);
+    $('viewer').append(audio);
+  }
+  $('viewer').append(speedPicker(el));
 }
 
 async function save(items) {

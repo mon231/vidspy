@@ -10,6 +10,8 @@ import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.view.Menu
+import android.view.MenuItem
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
@@ -79,9 +81,6 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<Button>(R.id.button).setOnClickListener { fetch() }
         findViewById<Button>(R.id.btnPaste).setOnClickListener { paste() }
-        findViewById<Button>(R.id.btnSettings).setOnClickListener {
-            startActivity(Intent(this, SettingsActivity::class.java))
-        }
         findViewById<Button>(R.id.btnPrev).setOnClickListener { step(-1) }
         findViewById<Button>(R.id.btnNext).setOnClickListener { step(1) }
         findViewById<Button>(R.id.btnDownload).setOnClickListener { downloadCurrent() }
@@ -91,6 +90,19 @@ class MainActivity : AppCompatActivity() {
         }
         setupControls()
         handleShareIntent(intent)
+    }
+
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        menuInflater.inflate(R.menu.main, menu)
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        if (item.itemId == R.id.action_accounts) {
+            startActivity(Intent(this, SettingsActivity::class.java))
+            return true
+        }
+        return super.onOptionsItemSelected(item)
     }
 
     override fun onNewIntent(intent: Intent?) {

@@ -93,10 +93,14 @@ class SettingsActivity : AppCompatActivity() {
             row.addView(Button(this).apply {
                 text = if (acc.connected) "Replace" else "Connect"
                 setOnClickListener { showConnectDialog(acc) }
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, dp(48)).apply { marginStart = dp(12) }
             })
             if (acc.connected) row.addView(Button(this).apply {
                 text = "Remove"
                 setOnClickListener { disconnect(acc) }
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, dp(48)).apply { marginStart = dp(12) }
             })
             list.addView(row)
         }

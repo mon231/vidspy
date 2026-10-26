@@ -34,11 +34,6 @@ class VideoPlayer(
             field = value
             player?.setPlaybackSpeed(value)
         }
-    var muted = false
-        set(value) {
-            field = value
-            player?.volume = if (value) 0f else 1f
-        }
 
     val isPlaying get() = player?.let { it.playWhenReady && it.playbackState != Player.STATE_ENDED } == true
     val isLive get() = player?.isCurrentMediaItemLive == true
@@ -64,7 +59,6 @@ class VideoPlayer(
         exo.setMediaSource(if (audio == null) video else
             MergingMediaSource(video, source(audio.url, audio.headers, audio.ext == "m3u8")))
         exo.setPlaybackSpeed(speed)
-        exo.volume = if (muted) 0f else 1f
         exo.playWhenReady = true
         exo.prepare()
         view.player = exo
@@ -79,11 +73,6 @@ class VideoPlayer(
         } else {
             exo.playWhenReady = !exo.playWhenReady
         }
-    }
-
-    fun stop() {
-        player?.pause()
-        player?.seekTo(0)
     }
 
     fun seekTo(ms: Int) = player?.seekTo(ms.toLong())

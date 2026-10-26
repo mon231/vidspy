@@ -13,9 +13,8 @@ Android app. Paste (or share) a social-media link, **watch it directly** in the 
 
 | Feature | Notes |
 |---|---|
-| Direct watch | Streams the CDN URL with Media3 ExoPlayer (seek bar, 0.5x-2x speed, mute). Only a sliding window around the playback position is buffered, so huge files and live HLS work. A separate audio stream is merged on the fly (`MergingMediaSource`); desktop syncs a second `<audio>` element. |
+| Direct watch | Streams the CDN URL with Media3 ExoPlayer (seek bar, play/pause, 0.5x-2x speed). Only a sliding window around the playback position is buffered, so huge files and live HLS work. A separate audio stream is merged on the fly (`MergingMediaSource`); desktop syncs a second `<audio>` element. |
 | Download | Saves to `Movies/vidspy` (video) or `Pictures/vidspy` (image) through MediaStore. |
-| Download all | Saves every item of a carousel / multi-media post. |
 | Share target | Share a link from the Instagram / TikTok / LinkedIn app straight to vidspy. |
 | Anonymous by default | No login needed. Login-walled posts fail with a clear message, unless you link an account (below). |
 | Linked accounts | **Accounts** button: connect each platform with your browser cookies; used automatically for that platform's links. |
@@ -152,7 +151,7 @@ Same flow as the phone: paste link, watch, prev/next, download (to `~/Downloads/
 
 1. Open vidspy, paste a link (or share one to vidspy from another app).
 2. Tap **Watch**. Video streams; images load. Use `<` `>` for carousels.
-3. Tap **Download** (current item) or **Download all**.
+3. Tap the download arrow on the video (saves the current item).
 
 ## Icon
 
@@ -160,7 +159,7 @@ An eye (spy) with a play button as the iris. `python assets/make_icons.py` regen
 
 ## Limitations
 
-- Without a linked account Vimeo, Reddit (currently), Facebook and X often login-wall posts, so link an account for them;
+- Without a linked account Vimeo, Reddit, Facebook and X often login-wall posts, so link an account for them;
 - Reddit serves video and audio as separate streams. Merging needs ffmpeg, so Reddit videos play without sound (the app shows a note); private accounts, age/region-gated and login-walled posts fail. Instagram increasingly login-walls anonymous requests; expect failures there.
 - LinkedIn scraping depends on the public page markup and may break.
 - Live HLS streams can be watched but not downloaded. Stories and profile/playlist links are not supported (only single posts).

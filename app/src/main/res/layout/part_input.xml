@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:orientation="horizontal">
+
+    <EditText
+        android:id="@+id/etX"
+        android:layout_width="0dp"
+        android:layout_height="48dp"
+        android:layout_weight="1"
+        android:background="@drawable/bg_input"
+        android:hint="Paste a link"
+        android:imeOptions="actionGo"
+        android:importantForAutofill="no"
+        android:inputType="textUri"
+        android:maxLines="1"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:textColor="@color/ink"
+        android:textColorHint="@color/muted"
+        android:textSize="15sp" />
+
+    <Button
+        android:id="@+id/btnPaste"
+        style="@style/Vidspy.Button.Control"
+        android:layout_width="wrap_content"
+        android:layout_height="48dp"
+        android:layout_marginStart="8dp"
+        android:text="Paste" />
+
+    <Button
+        android:id="@+id/button"
+        style="@style/Vidspy.Button"
+        android:layout_width="wrap_content"
+        android:layout_height="48dp"
+        android:layout_marginStart="8dp"
+        android:minWidth="0dp"
+        android:text="Watch" />
+</LinearLayout>

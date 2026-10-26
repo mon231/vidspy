@@ -2,88 +2,147 @@
 <html lang="en" dir="ltr">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>vidspy</title>
 <link rel="icon" type="image/png" href="favicon.png">
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
 <script type="text/javascript" src="/eel.js"></script>
 <style>
-  html, body { direction: ltr; }
-  body { font: 15px system-ui, sans-serif; margin: 0; padding: 16px; background: #14141a; color: #eee; }
-  .row { display: flex; gap: 8px; margin-bottom: 10px; }
-  input { flex: 1; padding: 8px; border-radius: 6px; border: 1px solid #444; background: #1f1f28; color: #eee; }
-  button { padding: 8px 14px; border-radius: 6px; border: 0; background: #6750a4; color: #fff; cursor: pointer; }
+  :root {
+    --bg: #e6eceb; --surface: #fafbf9; --ink: #23282b; --muted: #5d6a6d; --line: #c3cfce;
+    --sea: #0e3b43; --amber: #f0a202; --on-amber: #000; --err: #b3261e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0a1a1e; --surface: #12292f; --ink: #e6eceb; --muted: #8fa3a6; --line: #28474f; --err: #ff8a80; }
+  }
+  * { box-sizing: border-box; }
+  html, body { direction: ltr; height: 100%; }
+  body { font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0; background: var(--bg); color: var(--ink); }
+  button, input, textarea, select { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible {
+    outline: 2px solid var(--amber); outline-offset: 2px; }
+
+  .bar { background: var(--sea); color: #fff; display: flex; align-items: center; gap: 10px; padding: 10px clamp(12px, 3vw, 28px); }
+  .bar h1 { margin: 0; font-size: 19px; display: flex; align-items: center; gap: 10px; flex: 1; letter-spacing: .2px; }
+  .bar img { border-radius: 8px; }
+  .link { background: transparent; border: 1px solid rgba(255,255,255,.35); color: #fff; border-radius: 10px; padding: 6px 12px; font-size: 13px; }
+  .link:hover { background: rgba(255,255,255,.12); }
+
+  main { display: grid; gap: 16px; padding: clamp(12px, 3vw, 28px); max-width: 1400px; margin: 0 auto;
+         grid-template-columns: minmax(0, 1fr); align-content: start; }
+  @media (min-width: 900px) { main { grid-template-columns: minmax(300px, 4fr) minmax(0, 6fr); } }
+
+  .panel { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .row { display: flex; gap: 8px; }
+  input[type=text], input#url { flex: 1; min-width: 0; height: 48px; padding: 0 14px; border-radius: 14px; border: 1px solid var(--line);
+                                background: var(--surface); }
+  .btn { height: 48px; padding: 0 18px; border-radius: 14px; border: 1px solid var(--line); background: transparent; }
+  .btn:hover { background: var(--surface); }
+  .btn.primary { background: var(--amber); color: var(--on-amber); border-color: var(--amber); font-weight: 700; }
+  .btn.primary:hover { filter: brightness(1.06); }
+  .btn.small { height: 40px; padding: 0 14px; }
   button:disabled { opacity: .5; cursor: default; }
-  #viewer { display: flex; justify-content: center; background: #000; border-radius: 8px; min-height: 120px; }
-  video, img { max-width: 100%; max-height: 62vh; }
-  #info, #status { margin: 8px 0; color: #aaa; white-space: pre-line; }
-  #status.err { color: #ff8a80; }
-  dialog { background: #1f1f28; color: #eee; border: 1px solid #444; border-radius: 10px; width: min(560px, 92vw); }
+  a.btn { display: inline-flex; align-items: center; text-decoration: none; }
+
+  #info { color: var(--muted); font-size: 13px; white-space: pre-line; overflow-wrap: anywhere; }
+  #status { font-size: 13px; color: var(--muted); white-space: pre-line; overflow-wrap: anywhere; }
+  #status.err { color: var(--err); }
+  #nav { display: none; align-items: center; justify-content: space-between; }
+  #nav .btn { width: 56px; padding: 0; }
+
+  .stage { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+  #viewer { position: relative; display: flex; align-items: center; justify-content: center; background: #000; overflow: hidden;
+            border-radius: 18px; border: 1px solid var(--line); aspect-ratio: 16 / 9; max-height: 74vh; width: 100%; }
+  #viewer .empty { color: var(--muted); padding: 24px; text-align: center; }
+  #viewer.idle { background: var(--surface); }
+  #viewer video, #viewer img { width: 100%; height: 100%; object-fit: contain; }
+  #dl { position: absolute; top: 10px; right: 10px; width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--amber);
+        display: none; align-items: center; justify-content: center; padding: 0; z-index: 2; }
+  #dl:hover { filter: brightness(1.06); }
+  #dl svg { fill: #000; }
+
+  #controls { display: none; align-items: center; gap: 10px; }
+  #play { width: 52px; height: 44px; padding: 0; font-weight: 700; }
+  #time { color: var(--muted); font-size: 13px; min-width: 84px; font-variant-numeric: tabular-nums; }
+  #seek { flex: 1; min-width: 0; accent-color: var(--amber); }
+  #speed { height: 44px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface); padding: 0 8px; }
+
+  dialog { background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 18px; width: min(560px, 94vw);
+           max-height: 90vh; padding: 20px; }
   dialog::backdrop { background: rgba(0,0,0,.6); }
-  .acc { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid #333; }
-  .acc .name { flex: 1; } .acc small { display: block; color: #aaa; }
-  textarea { width: 100%; box-sizing: border-box; min-height: 120px; margin: 8px 0; background: #14141a; color: #eee;
-             border: 1px solid #444; border-radius: 6px; padding: 8px; }
-  button.secondary { background: #3a3a48; }
-  a.btn { padding: 8px 14px; border-radius: 6px; background: #6750a4; color: #fff; text-decoration: none; font-size: 14px; }
-  a.btn.secondary { background: #3a3a48; }
-  .badge { display: inline-flex; align-items: center; justify-content: center; border-radius: 22%;
-           border: 1px solid #444; flex: none; }
-  #connectSteps { padding-left: 20px; color: #ccc; font-size: 13px; }
+  .acc { display: flex; align-items: center; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .acc .name { flex: 1; min-width: 120px; } .acc small { display: block; color: var(--muted); }
+  textarea { width: 100%; min-height: 120px; margin: 8px 0; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
+  .badge { display: inline-flex; align-items: center; justify-content: center; border-radius: 22%; border: 1px solid var(--line); flex: none; }
+  #connectSteps { padding-left: 20px; color: var(--muted); font-size: 13px; }
   #connectSteps li { margin: 6px 0; }
+  .hint { color: var(--muted); font-size: 13px; }
 </style>
 </head>
 <body>
-  <h1 style="margin:0 0 12px;font-size:20px;display:flex;align-items:center;gap:10px">
-    <img src="favicon.png" alt="" width="32" height="32" style="border-radius:7px">vidspy
-    <span style="flex:1"></span><button id="settingsBtn" class="secondary" style="font-size:13px">Accounts</button></h1>
-  <div class="row">
-    <input id="url" placeholder="Instagram, TikTok, YouTube, X, Facebook, LinkedIn or .m3u8 link" autofocus>
-    <button id="go">Watch</button>
-  </div>
-  <div id="info"></div>
-  <div id="viewer"></div>
-  <div class="row" id="nav" style="display:none; margin-top:10px">
-    <button id="prev">&lt;</button><span id="counter" style="align-self:center"></span><button id="next">&gt;</button>
-    <span style="flex:1"></span>
-    <button id="dl">Download</button><button id="dlAll">Download all</button>
-  </div>
-  <div id="status"></div>
+  <header class="bar">
+    <h1><img src="favicon.png" alt="" width="30" height="30">vidspy</h1>
+    <button id="settingsBtn" class="link">Accounts</button>
+  </header>
+  <main>
+    <section class="panel">
+      <div class="row">
+        <input id="url" type="text" placeholder="Paste a link" autofocus>
+        <button id="go" class="btn primary">Watch</button>
+      </div>
+      <div id="info"></div>
+      <div id="nav">
+        <button id="prev" class="btn small" aria-label="Previous">&lt;</button>
+        <span id="counter"></span>
+        <button id="next" class="btn small" aria-label="Next">&gt;</button>
+      </div>
+      <div id="status"></div>
+    </section>
+    <section class="stage">
+      <div id="viewer" class="idle"><div class="empty">Paste a link to watch it here</div></div>
+      <div id="controls">
+        <button id="play" class="btn small" aria-label="Play or pause">||</button>
+        <span id="time">0:00 / 0:00</span>
+        <input id="seek" type="range" min="0" max="0" step="0.1" value="0" aria-label="Seek">
+        <select id="speed" aria-label="Speed"></select>
+      </div>
+    </section>
+  </main>
   <dialog id="settings">
     <h3 style="margin-top:0">Linked accounts</h3>
-    <div style="color:#aaa;font-size:13px">Optional. Connect an account to open posts that need a login. Cookies stay on this computer.</div>
+    <div class="hint">Optional. Connect an account to open posts that need a login. Cookies stay on this computer.</div>
     <div id="accList"></div>
     <div id="connectBox" style="display:none">
       <h4 id="connectTitle" style="margin:14px 0 6px;display:flex;align-items:center;gap:10px"></h4>
       <ol id="connectSteps"></ol>
-      <div class="row">
-        <a id="loginLink" class="btn" target="_blank" rel="noopener noreferrer"></a>
+      <div class="row" style="margin-bottom:8px">
+        <a id="loginLink" class="btn small primary" target="_blank" rel="noopener noreferrer"></a>
       </div>
       <textarea id="cookieText" placeholder="Paste the Cookie header value here"></textarea>
-      <div class="row"><button id="saveCookies">Save</button><button id="cancelCookies" class="secondary">Cancel</button></div>
-      <div id="connectHelp" style="color:#aaa;font-size:12px"></div>
+      <div class="row"><button id="saveCookies" class="btn small primary">Save</button><button id="cancelCookies" class="btn small">Cancel</button></div>
+      <div id="connectHelp" class="hint" style="margin-top:8px"></div>
     </div>
-    <div id="accStatus" style="min-height:1.2em;color:#aaa"></div>
-    <div class="row" style="justify-content:flex-end;margin:8px 0 0"><button id="closeSettings" class="secondary">Close</button></div>
+    <div id="accStatus" class="hint" style="min-height:1.2em;margin-top:8px"></div>
+    <div class="row" style="justify-content:flex-end;margin-top:8px"><button id="closeSettings" class="btn small">Close</button></div>
   </dialog>
 <script>
-let post = null, idx = 0, speed = 1;
-function speedPicker(video) {
-  const label = document.createElement('label');
-  label.style.cssText = 'display:block;margin-top:8px;color:#aaa;font-size:13px';
-  label.textContent = 'Speed ';
-  const select = document.createElement('select');
-  for (const s of [0.5, 0.75, 1, 1.25, 1.5, 2]) select.add(new Option(s + 'x', s, false, s === speed));
-  select.onchange = () => { speed = parseFloat(select.value); video.playbackRate = speed; };
-  label.append(select);
-  return label;
-}
+let post = null, idx = 0, speed = 1, media = null;
 const $ = id => document.getElementById(id);
 const status = (msg, err) => { $('status').textContent = msg || ''; $('status').className = err ? 'err' : ''; };
+const clock = s => { s = Math.max(0, Math.floor(s || 0)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+
+for (const s of [0.5, 0.75, 1, 1.25, 1.5, 2]) $('speed').add(new Option(s + 'x', s, false, s === 1));
+$('speed').onchange = () => { speed = parseFloat($('speed').value); if (media) media.playbackRate = speed; };
+
+const DOWNLOAD_ICON = '<svg viewBox="0 0 24 24" width="24" height="24"><path d="M12 16 7 11l1.4-1.4L11 12.2V4h2v8.2l2.6-2.6L17 11l-5 5zM5 18h14v2H5z"/></svg>';
+const dl = Object.assign(document.createElement('button'), { id: 'dl', title: 'Download', ariaLabel: 'Download', innerHTML: DOWNLOAD_ICON });
+dl.onclick = () => save(post.items[idx]);
 
 async function go() {
   const text = $('url').value.trim();
   if (!text) return;
-  status('Resolving…'); $('viewer').innerHTML = '';
+  status('Resolving…');
   const r = await eel.resolve(text)();
   if (!r.ok) { status(r.error, true); return; }
   post = r.post; idx = 0; status(''); show();
@@ -108,43 +167,72 @@ function followVideo(video, audio) {
   video.addEventListener('seeked', jump);
   video.addEventListener('timeupdate', jump);
   video.addEventListener('ratechange', () => { audio.playbackRate = video.playbackRate; });
-  video.addEventListener('volumechange', () => { audio.volume = video.volume; audio.muted = video.muted; });
+}
+
+function controls(video) {
+  const seek = $('seek');
+  let dragging = false;
+  const refresh = () => {
+    $('play').textContent = video.paused || video.ended ? '>' : '||';
+    const live = !isFinite(video.duration);
+    seek.disabled = live;
+    if (live) { $('time').textContent = 'LIVE'; return; }
+    seek.max = video.duration;
+    if (!dragging) seek.value = video.currentTime;
+    $('time').textContent = `${clock(dragging ? seek.value : video.currentTime)} / ${clock(video.duration)}`;
+  };
+  for (const ev of ['play', 'pause', 'ended', 'timeupdate', 'loadedmetadata', 'durationchange']) video.addEventListener(ev, refresh);
+  $('play').onclick = () => {
+    if (video.ended) video.currentTime = 0;
+    video.paused || video.ended ? video.play() : video.pause();
+  };
+  video.onclick = $('play').onclick;
+  seek.oninput = () => { dragging = true; refresh(); };
+  seek.onchange = () => { video.currentTime = parseFloat(seek.value); dragging = false; refresh(); };
+  $('speed').value = speed;
+  $('controls').style.display = 'flex';
+  refresh();
 }
 
 function show() {
   const item = post.items[idx];
-  $('nav').style.display = 'flex';
+  $('nav').style.display = post.items.length > 1 ? 'flex' : 'none';
   $('counter').textContent = `${idx + 1} / ${post.items.length}`;
   $('info').textContent = `${post.platform} · ${item.title}` + (item.note ? `\n${item.note}` : '');
+  const viewer = $('viewer');
+  viewer.classList.remove('idle');
+  viewer.replaceChildren();
+  $('controls').style.display = 'none';
+  media = null;
   const el = document.createElement(item.type === 'video' ? 'video' : 'img');
-  if (item.type === 'video') { el.controls = true; el.autoplay = true; el.playbackRate = speed; }
+  if (item.type === 'video') { el.autoplay = true; el.playsInline = true; el.playbackRate = speed; }
   attach(el, item.stream, item.ext === 'm3u8');
   el.onerror = () => status('Cannot play/show this media', true);
-  $('viewer').replaceChildren(el);
+  viewer.append(el, dl);
+  dl.style.display = 'flex';
   if (item.type !== 'video') return;
+  media = el;
   el.addEventListener('loadedmetadata', () => { el.playbackRate = speed; });
   if (item.audio_stream) {
     const audio = document.createElement('audio');
     attach(audio, item.audio_stream, item.audio.ext === 'm3u8');
     followVideo(el, audio);
-    $('viewer').append(audio);
+    viewer.append(audio);
   }
-  $('viewer').append(speedPicker(el));
+  controls(el);
 }
 
-async function save(items) {
-  for (const it of items) {
-    status('Downloading…');
-    const r = await eel.download(it.id)();
-    if (!r.ok) { status(r.error, true); return; }
-    status('Saved: ' + r.path);
-  }
+async function save(it) {
+  status('Downloading…');
+  const r = await eel.download(it.id)();
+  if (!r.ok) { status(r.error, true); return; }
+  status('Saved: ' + r.path);
 }
 
 let connecting = null;
 const badge = (a, size) => `<span class="badge" style="width:${size}px;height:${size}px;background:${a.color}">` +
   `<svg viewBox="0 0 24 24" width="${Math.round(size * .6)}" height="${Math.round(size * .6)}" fill="#fff"><path d="${a.icon}"/></svg></span>`;
-const accStatus = (m, err) => { $('accStatus').textContent = m || ''; $('accStatus').style.color = err ? '#ff8a80' : '#aaa'; };
+const accStatus = (m, err) => { $('accStatus').textContent = m || ''; $('accStatus').style.color = err ? 'var(--err)' : ''; };
 
 async function loadAccounts() {
   const r = await eel.accounts_list()();
@@ -153,7 +241,7 @@ async function loadAccounts() {
     const row = document.createElement('div'); row.className = 'acc';
     const state = !a.connected ? 'Not connected' : `Connected (${a.count} cookies)`;
     row.innerHTML = badge(a, 36) + `<div class="name">${a.label}<small>${state}</small></div>`;
-    const b = document.createElement('button'); b.textContent = a.connected ? 'Replace' : 'Connect';
+    const b = document.createElement('button'); b.className = 'btn small primary'; b.textContent = a.connected ? 'Replace' : 'Connect';
     b.onclick = () => {
       connecting = a;
       $('connectTitle').innerHTML = badge(a, 32) + `<span>Connect ${a.label}</span>`;
@@ -165,7 +253,7 @@ async function loadAccounts() {
     };
     row.append(b);
     if (a.connected) {
-      const d = document.createElement('button'); d.className = 'secondary'; d.textContent = 'Remove';
+      const d = document.createElement('button'); d.className = 'btn small'; d.textContent = 'Remove';
       d.onclick = async () => { await eel.account_disconnect(a.platform)(); accStatus(a.label + ' removed'); loadAccounts(); };
       row.append(d);
     }
@@ -187,8 +275,6 @@ $('go').onclick = go;
 $('url').onkeydown = e => { if (e.key === 'Enter') go(); };
 $('prev').onclick = () => { idx = (idx - 1 + post.items.length) % post.items.length; show(); };
 $('next').onclick = () => { idx = (idx + 1) % post.items.length; show(); };
-$('dl').onclick = () => save([post.items[idx]]);
-$('dlAll').onclick = () => save(post.items);
 </script>
 </body>
 </html>

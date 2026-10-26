@@ -56,8 +56,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var imageView: ImageView
     private lateinit var navLayout: View
     private lateinit var controlLayout: View
-    private lateinit var downloadLayout: View
-    private lateinit var btnMute: Button
+    private lateinit var btnDownload: View
+    private lateinit var tvEmpty: View
     private lateinit var btnPlay: Button
     private lateinit var btnSpeed: Button
     private lateinit var seekBar: SeekBar
@@ -104,8 +104,8 @@ class MainActivity : AppCompatActivity() {
         imageView = findViewById(R.id.imageView)
         navLayout = findViewById(R.id.navLayout)
         controlLayout = findViewById(R.id.controlLayout)
-        downloadLayout = findViewById(R.id.downloadLayout)
-        btnMute = findViewById(R.id.btnMute)
+        btnDownload = findViewById(R.id.btnDownload)
+        tvEmpty = findViewById(R.id.tvEmpty)
         btnPlay = findViewById(R.id.btnPlay)
         btnSpeed = findViewById(R.id.btnSpeed)
         seekBar = findViewById(R.id.seekBar)
@@ -115,8 +115,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnPaste).setOnClickListener { paste() }
         findViewById<Button>(R.id.btnPrev).setOnClickListener { step(-1) }
         findViewById<Button>(R.id.btnNext).setOnClickListener { step(1) }
-        findViewById<Button>(R.id.btnDownload).setOnClickListener { downloadCurrent() }
-        findViewById<Button>(R.id.btnDownloadAll).setOnClickListener { downloadAll() }
+        btnDownload.setOnClickListener { downloadCurrent() }
         etUrl.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_GO) { fetch(); true } else false
         }
@@ -169,7 +168,8 @@ class MainActivity : AppCompatActivity() {
                 val resolved = withContext(Dispatchers.IO) { backend.resolve(text) }
                 post = resolved
                 index = 0
-                downloadLayout.visibility = View.VISIBLE
+                tvEmpty.visibility = View.GONE
+                btnDownload.visibility = View.VISIBLE
                 show()
             } catch (e: Exception) {
                 toast(errorText(e), long = true)
@@ -239,15 +239,7 @@ class MainActivity : AppCompatActivity() {
             player.toggle()
             btnPlay.text = if (player.isPlaying) PAUSE_ICON else PLAY_ICON
         }
-        findViewById<Button>(R.id.btnStop).setOnClickListener {
-            player.stop()
-            btnPlay.text = PLAY_ICON
-        }
         btnSpeed.setOnClickListener { showSpeedMenu() }
-        btnMute.setOnClickListener {
-            player.muted = !player.muted
-            btnMute.text = if (player.muted) "Unmute" else "Mute"
-        }
         seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(bar: SeekBar, progress: Int, fromUser: Boolean) {
                 if (fromUser) tvTime.text = "${clock(progress)} / ${clock(player.duration)}"
@@ -303,11 +295,6 @@ class MainActivity : AppCompatActivity() {
     private fun downloadCurrent() {
         val p = post ?: return
         saveItems(listOf(p.items[index]))
-    }
-
-    private fun downloadAll() {
-        val p = post ?: return
-        saveItems(p.items)
     }
 
     private fun saveItems(items: List<MediaItem>) {

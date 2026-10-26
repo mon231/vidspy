@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/navLayout"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:visibility="gone">
+
+    <Button
+        android:id="@+id/btnPrev"
+        style="@style/Vidspy.Button.Control"
+        android:layout_width="56dp"
+        android:layout_height="wrap_content"
+        android:text="&lt;" />
+
+    <TextView
+        android:id="@+id/tvCounter"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:textColor="@color/ink" />
+
+    <Button
+        android:id="@+id/btnNext"
+        style="@style/Vidspy.Button.Control"
+        android:layout_width="56dp"
+        android:layout_height="wrap_content"
+        android:text="&gt;" />
+</LinearLayout>

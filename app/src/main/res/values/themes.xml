@@ -1,38 +1,48 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Base application theme. -->
-    <style name="Theme.MyApplication.Base" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
-        <!-- Primary brand color. -->
-        <item name="colorPrimary">@color/purple_500</item>
-        <item name="colorPrimaryVariant">@color/purple_700</item>
+    <style name="Theme.MyApplication.Base" parent="Theme.MaterialComponents">
+        <item name="colorPrimary">@color/deep_sea</item>
+        <item name="colorPrimaryVariant">@color/deep_sea_dark</item>
         <item name="colorOnPrimary">@color/white</item>
-        <!-- Secondary brand color. -->
-        <item name="colorSecondary">@color/teal_200</item>
-        <item name="colorSecondaryVariant">@color/teal_700</item>
-        <item name="colorOnSecondary">@color/black</item>
-        <!-- Status bar color. -->
-        <item name="android:statusBarColor" tools:targetApi="l">?attr/colorPrimaryVariant
-        </item>
-        <!-- Customize your theme here. -->
+        <item name="colorSecondary">@color/amber</item>
+        <item name="colorSecondaryVariant">@color/amber</item>
+        <item name="colorOnSecondary">@color/ink</item>
+        <item name="actionBarStyle">@style/Vidspy.ActionBar</item>
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:textColorPrimary">@color/ink</item>
+        <item name="android:textColorSecondary">@color/muted</item>
+        <item name="android:statusBarColor" tools:targetApi="l">@color/deep_sea_dark</item>
     </style>
+    <style name="Vidspy.ActionBar" parent="Widget.AppCompat.ActionBar.Solid">
+        <item name="background">@color/deep_sea</item>
+    </style>
+
     <style name="Theme.MyApplication" parent="Theme.MyApplication.Base"/>
 
     <style name="Vidspy.Button" parent="Widget.MaterialComponents.Button">
-        <item name="android:minHeight">52dp</item>
+        <item name="android:minHeight">48dp</item>
         <item name="android:insetTop">0dp</item>
         <item name="android:insetBottom">0dp</item>
         <item name="android:textSize">15sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/black</item>
+        <item name="backgroundTint">@color/amber</item>
+        <item name="cornerRadius">14dp</item>
     </style>
     <style name="Vidspy.Button.Outlined" parent="Widget.MaterialComponents.Button.OutlinedButton">
-        <item name="android:minHeight">52dp</item>
+        <item name="android:minHeight">48dp</item>
         <item name="android:insetTop">0dp</item>
         <item name="android:insetBottom">0dp</item>
-        <item name="android:textSize">15sp</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textColor">@color/ink</item>
+        <item name="strokeColor">@color/line</item>
+        <item name="cornerRadius">14dp</item>
     </style>
     <style name="Vidspy.Button.Control" parent="Vidspy.Button.Outlined">
         <item name="android:minWidth">0dp</item>
-        <item name="android:paddingStart">4dp</item>
-        <item name="android:paddingEnd">4dp</item>
-        <item name="android:textSize">13sp</item>
+        <item name="android:minHeight">44dp</item>
+        <item name="android:paddingStart">10dp</item>
+        <item name="android:paddingEnd">10dp</item>
+        <item name="android:textSize">14sp</item>
         <item name="android:maxLines">1</item>
     </style>
 </resources>

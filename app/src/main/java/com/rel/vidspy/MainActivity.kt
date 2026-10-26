@@ -38,6 +38,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
+private const val PAUSE_ICON = "||"
+private const val PLAY_ICON = ">"
+
 class MainActivity : AppCompatActivity() {
     private val job = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.Main + job)
@@ -90,7 +93,7 @@ class MainActivity : AppCompatActivity() {
             override fun onBuffering(buffering: Boolean) = setBusy(buffering)
 
             override fun onEnded() {
-                btnPlay.text = "Play"
+                btnPlay.text = PLAY_ICON
             }
 
             override fun onError(message: String) {
@@ -191,7 +194,7 @@ class MainActivity : AppCompatActivity() {
         if (item.type == MediaType.VIDEO) {
             playerView.visibility = View.VISIBLE
             controlLayout.visibility = View.VISIBLE
-            btnPlay.text = "Pause"
+            btnPlay.text = PAUSE_ICON
             player.play(item)
             return
         }
@@ -234,11 +237,11 @@ class MainActivity : AppCompatActivity() {
     private fun setupControls() {
         btnPlay.setOnClickListener {
             player.toggle()
-            btnPlay.text = if (player.isPlaying) "Pause" else "Play"
+            btnPlay.text = if (player.isPlaying) PAUSE_ICON else PLAY_ICON
         }
         findViewById<Button>(R.id.btnStop).setOnClickListener {
             player.stop()
-            btnPlay.text = "Play"
+            btnPlay.text = PLAY_ICON
         }
         btnSpeed.setOnClickListener { showSpeedMenu() }
         btnMute.setOnClickListener {
@@ -264,7 +267,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateProgress() {
         if (dragging || !player.active) return
-        btnPlay.text = if (player.isPlaying) "Pause" else "Play"
+        btnPlay.text = if (player.isPlaying) PAUSE_ICON else PLAY_ICON
         if (player.isLive) {
             seekBar.isEnabled = false
             tvTime.text = "LIVE"
@@ -357,7 +360,7 @@ class MainActivity : AppCompatActivity() {
     override fun onStop() {
         super.onStop()
         player.pause()
-        btnPlay.text = "Play"
+        btnPlay.text = PLAY_ICON
     }
 
     override fun onDestroy() {

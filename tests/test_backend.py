@@ -81,13 +81,32 @@ def test_best_progressive_skips_hls_and_prefers_audio():
     ("https://www.youtube.com/watch?v=abc", "youtube"),
     ("https://youtu.be/abc", "youtube"),
     ("https://cdn.example.com/live/master.m3u8?token=1", "hls"),
-    ("https://example.com/video.mp4", None),
+    ("https://example.com/video.mp4", "direct"),
     ("https://x.com/user/status/1", "twitter"),
     ("https://twitter.com/user/status/1", "twitter"),
     ("https://t.co/abc", "twitter"),
     ("https://www.facebook.com/watch/?v=1", "facebook"),
     ("https://fb.watch/abc/", "facebook"),
     ("https://m.facebook.com/reel/1", "facebook"),
+    ("https://clips.twitch.tv/FaintLightGullWholeWheat", "twitch"),
+    ("https://www.twitch.tv/videos/831681911", "twitch"),
+    ("https://www.snapchat.com/spotlight/W7_AAA123", "snapchat"),
+    ("https://t.snapchat.com/abc", "snapchat"),
+    ("https://imgur.com/gallery/YcAQlkx", "imgur"),
+    ("https://imgur.com/a/iX265HX", "imgur"),
+    ("https://i.imgur.com/YcAQlkxh.jpg", "imgur"),
+    ("https://imgur.io/x", "imgur"),
+    ("https://www.tumblr.com/BLOG/12345", "tumblr"),
+    ("https://user.tumblr.com/post/1/pi", "tumblr"),
+    ("https://tmblr.co/abc", "tumblr"),
+    ("https://www.dailymotion.com/video/x8abc", "dailymotion"),
+    ("https://dai.ly/x94cnnk", "dailymotion"),
+    ("https://example.com/a/clip.MP4", "direct"),
+    ("https://example.com/img/photo.png?width=1", "direct"),
+    ("https://example.com/anim.webm", "direct"),
+    # a platform host wins over its own CDN's media-looking path
+    ("https://i.imgur.com/clip.mp4", "imgur"),
+    ("https://example.com/page.html", None),
     ("https://notx.com/a", None),
 ])
 def test_detect_youtube_and_hls(url, platform):
@@ -95,18 +114,25 @@ def test_detect_youtube_and_hls(url, platform):
 
 
 def _serve(files):
+    """Serve files under 127.0.0.1. A value may be bytes or (bytes, content-type)."""
     import functools
     import http.server
     import tempfile
     import threading
     d = tempfile.mkdtemp()
-    for name, data in files.items():
+    ctype = {}
+    for name, value in files.items():
+        data, ct = value if isinstance(value, tuple) else (value, None)
         with open(os.path.join(d, name), "wb") as f:
             f.write(data)
+        if ct:
+            ctype[name] = ct
 
     class Q(http.server.SimpleHTTPRequestHandler):
         def log_message(self, *a):
             pass
+        def guess_type(self, path):
+            return ctype.get(os.path.basename(path)) or super().guess_type(path)
 
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Q, directory=d))
     threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -141,6 +167,43 @@ def test_hls_rejects_non_playlist_and_encrypted(tmp_path):
             logic.download(json.dumps(item), str(tmp_path))
     finally:
         srv.shutdown()
+
+
+def test_direct_resolve_and_download(tmp_path):
+    video = b"0123456789" * 2048  # 20 KB
+    photo = b"\x89PNG" + b"\0" * 124
+    srv, base = _serve({"clip.mp4": video, "photo.png": photo})
+    try:
+        post = json.loads(logic.resolve(f"{base}/clip.mp4"))
+        assert post["platform"] == "direct"
+        assert post["items"][0]["type"] == "video" and post["items"][0]["ext"] == "mp4"
+        assert post["items"][0]["title"] == "clip"
+        path = logic.download(json.dumps(post["items"][0]), str(tmp_path))
+        assert open(path, "rb").read() == video
+
+        post = json.loads(logic.resolve(f"{base}/photo.png"))
+        assert post["items"][0]["type"] == "image" and post["items"][0]["ext"] == "png"
+        path = logic.download(json.dumps(post["items"][0]), str(tmp_path))
+        assert open(path, "rb").read() == photo
+    finally:
+        srv.shutdown()
+
+
+def test_direct_rejects_web_page_served_as_media():
+    """A CDN error/interstitial page behind a .mp4-looking link is not 'media'."""
+    page = b"<html><body><video src='/real.mp4'></video></body></html>"
+    srv, base = _serve({"clip.mp4": (page, "text/html")})
+    try:
+        with pytest.raises(logic.VidspyError) as e:
+            logic.resolve(f"{base}/clip.mp4")
+        assert "text/html" in str(e.value)
+    finally:
+        srv.shutdown()
+
+
+def test_dailymotion_rejects_link_without_id():
+    with pytest.raises(ValueError):
+        ex.dailymotion_extract("https://www.dailymotion.com/")
 
 
 def test_yt_dlp_hls_fallback_when_no_progressive(monkeypatch):
@@ -226,8 +289,8 @@ def test_connect_rejects_bad_input(acc):
 
 def test_accounts_list_covers_all_platforms(acc):
     out = json.loads(logic.accounts_list())
-    assert {a["platform"] for a in out} == set(platforms.PLATFORMS)
-    assert len(out) == 9
+    assert {a["platform"] for a in out} == set(platforms.PLATFORMS)  # pseudo-platforms stay out
+    assert len(out) == 14
     for a in out:
         assert not a["connected"] and len(a["steps"]) == 3 and a["privacy"]
         assert a["login_url"].startswith("https://") and a["icon"] and a["color"].startswith("#")

@@ -180,6 +180,72 @@ def vimeo_player_extract(url):
     return ytdlp_extract(f"https://player.vimeo.com/video/{m.group(1)}")
 
 
+def tumblr_html_extract(url):
+    """Tumblr rate-limits the API gallery-dl shares (429) and rejects script TLS on the
+    legacy blog hosts; the public post page on www.tumblr.com serves og: media without login.
+
+    Same approach as LinkedIn below, hence `parse_html_media`."""
+    from . import browser
+
+    m = re.search(r"//([a-z0-9-]+)\.tumblr\.com/(?:post/)?(\d+)", url, re.I)
+    if m:  # blog.tumblr.com/homePOST/... and shortener redirects 403: use the www post page
+        url = f"https://www.tumblr.com/{m.group(1)}/{m.group(2)}"
+    resp = browser.chrome_session().get(url, timeout=20)
+    if resp.status_code in (401, 403):
+        raise ValueError(f"Tumblr blocked this request (HTTP {resp.status_code})")
+    resp.raise_for_status()
+    items = parse_html_media(resp.text)
+    for it in items:
+        it["headers"] = {"User-Agent": browser.CHROME_UA, "Referer": "https://www.tumblr.com/"}
+    if not items:
+        raise ValueError("no media found on the public Tumblr page")
+    return items[:MAX_ITEMS]
+
+
+def dailymotion_extract(url):
+    """Dailymotion's CDN 403s a script's m3u8 fetch unless it carries the site's Referer
+    (the extractor's Chrome impersonation isn't available on-device either -- yt-dlp fails).
+    The `metadata` endpoint yields the title and a signed manifest to use it with."""
+    import requests
+    from . import browser
+
+    m = (re.search(r"(?:dailymotion\.com/(?:[^/?#]+/)*video/|dai\.ly/)([0-9a-zA-Z]+)", url)
+         or re.search(r"player(?:/[a-z]+)?\.html\?(?:[^#]*&)?video=([0-9a-zA-Z]+)", url))
+    if not m:
+        raise ValueError("no Dailymotion video id in link")
+    session = browser.chrome_session()
+    session.headers.update({"Referer": "https://www.dailymotion.com/"})
+    resp = session.get(f"https://www.dailymotion.com/player/metadata/video/{m.group(1)}",
+                       params={"app": "com.dailymotion.neon"}, timeout=20)
+    resp.raise_for_status()
+    meta = resp.json()
+    error = meta.get("error")
+    if error:
+        raise ValueError(f"Dailymotion said: {error.get('raw_message') or error.get('title')}")
+    entries = (meta.get("qualities") or [])
+    if isinstance(entries, dict):
+        entries = [v for media_list in entries.values() for v in media_list if isinstance(v, dict)]
+    else:
+        entries = [v for quality in entries for v in (quality.get("videos") or [])
+                   if isinstance(v, dict)]
+    media = next((v for v in entries if v.get("type") == "application/x-mpegURL"),
+                 next((v for v in entries if v.get("url")), None))
+    if not media or not media.get("url"):
+        raise ValueError("no media found in the Dailymotion metadata")
+    posters = meta.get("posters") or {}
+    thumb = None
+    if isinstance(posters, dict):
+        sizes = [u for v in posters.values() for v in (v if isinstance(v, list) else [v])
+                 if isinstance(v, dict) and v.get("url")]
+        if sizes:
+            thumb = sizes[-1]["url"]
+    return [{
+        "type": "video", "url": media["url"], "ext": "m3u8",
+        "title": meta.get("title") or m.group(1), "thumbnail": thumb,
+        "headers": {"User-Agent": browser.CHROME_UA, "Referer": "https://www.dailymotion.com/"},
+    }]
+
+
 def _session_headers(session, media_url, referer):
     """Headers gallery-dl's own session used, limited to cookies valid for the media host
     (e.g. TikTok's CDN answers 403 without the anonymous session cookies)."""
@@ -316,3 +382,43 @@ def hls_extract(url):
     name = url.split("?")[0].rstrip("/").rsplit("/", 1)[-1].rsplit(".", 1)[0] or "stream"
     return [{"type": "video", "url": url, "ext": "m3u8", "title": name, "thumbnail": None,
              "headers": headers}]
+
+
+def direct_extract(url):
+    """Any direct media-file link (the `direct` pseudo-platform, like `hls`).
+
+    FTP(S) links are probed with status commands only (`ftp.py`) and carry a download-first
+    note; HTTP links fetch the headers only to confirm the server serves a file rather than a
+    web page -- never the body: the player keeps streaming it and `_http_get` downloads it in
+    chunks."""
+    from urllib.parse import urlsplit
+
+    if urlsplit(url).scheme.lower() in ("ftp", "ftps"):
+        from . import ftp
+        name, ext, _ = ftp.probe(url)
+        return [{"type": _kind(ext), "url": url, "ext": ext, "title": name.rsplit(".", 1)[0] or "file",
+                 "thumbnail": None, "headers": {},
+                 "note": ("The phone can't stream ftp:// links (players only speak http(s)) -- download "
+                          "instead. The desktop app can also play it through its local proxy.")}]
+
+    import requests
+
+    headers = {"User-Agent": DEFAULT_UA}
+    with requests.get(url, headers=headers, stream=True, timeout=20, allow_redirects=True) as resp:
+        resp.raise_for_status()
+        ctype = resp.headers.get("Content-Type", "").split(";")[0].strip().lower()
+        ok = (not ctype or ctype == "application/octet-stream" or "attachment" in resp.headers.get(
+            "Content-Disposition", "").lower())
+        ok = ok or ctype.startswith(("video/", "image/", "audio/", "application/mp4", "application/vnd"))
+        if not ok:
+            raise ValueError(f"the link serves {ctype}, not a media file")
+        final = resp.url
+        ext = _ext_from_url(final, None)
+        if not ext:
+            ext = {"video/mp4": "mp4", "video/webm": "webm", "video/quicktime": "mov",
+                   "video/mp2t": "ts", "image/jpeg": "jpg", "image/png": "png",
+                   "image/webp": "webp", "image/gif": "gif",
+                   "image/heic": "heic"}.get(ctype, "mp4" if ctype.startswith("video/") else "jpg")
+    name = final.split("?")[0].rstrip("/").rsplit("/", 1)[-1] or "file"
+    return [{"type": _kind(ext), "url": final, "ext": ext,
+             "title": name.rsplit(".", 1)[0] or "file", "thumbnail": None, "headers": headers}]

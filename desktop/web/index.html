@@ -84,6 +84,7 @@
   <header class="bar">
     <h1><img src="favicon.png" alt="" width="30" height="30">vidspy</h1>
     <button id="settingsBtn" class="link">Accounts</button>
+    <button id="tracesBtn" class="link" title="Save the error traces of failed resolves / downloads as a zip">Diagnostics</button>
   </header>
   <main>
     <section class="panel">
@@ -148,10 +149,16 @@ async function go() {
   post = r.post; idx = 0; status(''); show();
 }
 
-function attach(el, src, isHls) {
+// Errors that happen while playing are reported into the backend's error traces (like on Android).
+async function failPlayback(message, item) {
+  if (item && item.id) { try { await eel.trace_report('playback', message, item.id)(); } catch (e) {} }
+  status(message + ' (an error trace was stored — press Diagnostics to download)', true);
+}
+
+function attach(el, src, isHls, item) {
   if (isHls && window.Hls && Hls.isSupported()) {
     const hls = new Hls(); hls.loadSource(src); hls.attachMedia(el);
-    hls.on(Hls.Events.ERROR, (_, d) => d.fatal && status('Cannot play this stream', true));
+    hls.on(Hls.Events.ERROR, (_, d) => d.fatal && failPlayback('Cannot play this stream', item));
   } else {
     el.src = src;  // mp4/images, or native HLS (Safari)
   }
@@ -206,8 +213,10 @@ function show() {
   media = null;
   const el = document.createElement(item.type === 'video' ? 'video' : 'img');
   if (item.type === 'video') { el.autoplay = true; el.playsInline = true; el.playbackRate = speed; }
-  attach(el, item.stream, item.ext === 'm3u8');
-  el.onerror = () => status('Cannot play/show this media', true);
+  attach(el, item.stream, item.ext === 'm3u8', item);
+  el.onerror = () => item.type === 'video'
+    ? failPlayback('Cannot play this media', item)
+    : status('Cannot show this media', true);
   viewer.append(el, dl);
   dl.style.display = 'flex';
   if (item.type !== 'video') return;
@@ -261,6 +270,12 @@ async function loadAccounts() {
   }));
 }
 $('settingsBtn').onclick = () => { accStatus(''); $('connectBox').style.display = 'none'; loadAccounts(); $('settings').showModal(); };
+$('tracesBtn').onclick = async () => {
+  status('Packing error traces…');
+  const r = await eel.trace_pack()();
+  if (!r.ok) return status(r.error, true);
+  status(`Saved ${r.count} error trace(s) locally: ${r.path}`);
+};
 $('closeSettings').onclick = () => $('settings').close();
 $('cancelCookies').onclick = () => { $('connectBox').style.display = 'none'; };
 $('saveCookies').onclick = async () => {

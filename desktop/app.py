@@ -22,9 +22,10 @@ sys.path.insert(0, os.path.join(HERE, "..", "backend"))  # or: pip install -e ba
 import vidspy_backend as backend  # noqa: E402  (same package the Android app bundles)
 from vidspy_backend import extractors  # noqa: E402
 
-backend.configure(os.path.join(os.path.expanduser("~"), ".vidspy", "accounts"))
+backend.configure(os.path.join(os.path.expanduser("~"), ".vidspy"))
 DOWNLOAD_DIR = os.path.join(os.path.expanduser("~"), "Downloads", "vidspy")
 _items = {}  # id -> item dict; lets the browser stream via /media/<id> with the right headers
+_last_text = ""  # share/caption text of the last resolve, for the error traces (see traces.py)
 
 
 def rewrite_playlist(text, base_url, item_id, audio=False):
@@ -43,9 +44,12 @@ def rewrite_playlist(text, base_url, item_id, audio=False):
 
 
 def _resolve(text):
+    global _last_text
     post = json.loads(backend.resolve(text))
+    _last_text = text
     for item in post["items"]:
         item["id"] = uuid.uuid4().hex
+        item["platform"] = post["platform"]  # only in the desktop copy: player errors trace it (see traces.py)
         _items[item["id"]] = item
         item["stream"] = f"/media/{item['id']}"
         if item.get("audio"):
@@ -140,6 +144,28 @@ def main_gui():
     @eel.expose
     def account_disconnect(platform):
         return _call(backend.account_disconnect, platform)
+
+    @eel.expose
+    def trace_report(stage, message, item_id=None):
+        """A player error in the browser: recorded like the ones the Android app reports."""
+        try:
+            item = _items.get(item_id)
+            return {"ok": True,
+                    "name": backend.trace_report(stage or "playback", message, json.dumps(item) if item else None,
+                                                 "", _last_text, item.get("platform") if item else "")}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @eel.expose
+    def trace_pack():
+        """Zip every stored error trace into Downloads/vidspy (the Desktop "Download" button)."""
+        try:
+            path = backend.trace_pack(DOWNLOAD_DIR)
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+        if path is None:
+            return {"ok": False, "error": "No traces stored yet — they are written only when an action fails."}
+        return {"ok": True, "path": path, "count": backend.traces_count()}
 
     eel.init(os.path.join(HERE, "web"))
     try:

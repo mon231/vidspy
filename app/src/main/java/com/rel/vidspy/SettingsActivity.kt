@@ -19,6 +19,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
 import kotlinx.coroutines.CoroutineScope
@@ -27,6 +28,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 /** Connect / disconnect platform accounts. All logic and texts live in the Python backend. */
 class SettingsActivity : AppCompatActivity() {
@@ -52,7 +54,12 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun refresh() = scope.launch {
         val accounts = withContext(Dispatchers.IO) { backend.accounts() }
-        render(accounts)
+        val traces = try {
+            withContext(Dispatchers.IO) { backend.tracesInfo() }
+        } catch (e: Exception) {  // cosmetic: the list itself is what matters here
+            null
+        }
+        render(accounts, traces)
     }
 
     /** White platform glyph on a rounded badge in the platform's brand color. */
@@ -72,7 +79,7 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    private fun render(accounts: List<Account>) {
+    private fun render(accounts: List<Account>, traces: TraceFiles? = null) {
         list.removeAllViews()
         list.addView(TextView(this).apply {
             text = "Optional. Connect an account to open posts that need a login. " +
@@ -103,6 +110,59 @@ class SettingsActivity : AppCompatActivity() {
                     ViewGroup.LayoutParams.WRAP_CONTENT, dp(48)).apply { marginStart = dp(12) }
             })
             list.addView(row)
+        }
+        tracesTray(traces)
+    }
+
+    /** Internal diagnostics: every error while watching/downloading wrote a report here; download them all at once. */
+    private fun tracesTray(traces: TraceFiles? = null) {
+        list.addView(View(this).apply {
+            setBackgroundColor(getColor(R.color.line))
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)).apply {
+                topMargin = dp(20)
+            }
+        })
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(14), 0, 0)
+        }
+        row.addView(TextView(this).apply {
+            text = "Error traces\n${traces?.count ?: "?"} stored on this device · saves a zip with what went wrong"
+            textSize = 13f
+            setTextColor(ContextCompat.getColor(this@SettingsActivity, R.color.muted))
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        row.addView(Button(this).apply {
+            text = "Download"
+            setOnClickListener { exportTraces() }
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(44)).apply { marginStart = dp(12) }
+        })
+        list.addView(row)
+    }
+
+    private fun exportTraces() = scope.launch {
+        val traces = try {
+            withContext(Dispatchers.IO) { backend.tracesInfo() }
+        } catch (e: Exception) {
+            toast(errorText(e)); return@launch
+        }
+        if (traces.count == 0) {
+            toast("No traces yet: they are written only when watching or downloading fails")
+            return@launch
+        }
+        try {
+            val zip = withContext(Dispatchers.IO) {
+                val packDir = File(cacheDir, "tracepack").apply { deleteRecursively(); mkdirs() }
+                backend.tracePack(packDir)
+            } ?: return@launch toast("No traces stored yet")
+            val name = zip.name
+            val uri = withContext(Dispatchers.IO) { MediaSaver.saveDocument(this@SettingsActivity, zip) }
+            toast(if (uri != null) "Saved $name (${traces.count} trace(s), Downloads › vidspy)"
+            else "Could not write to Downloads")
+        } catch (e: Exception) {
+            toast(errorText(e))
         }
     }
 

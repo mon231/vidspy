@@ -16,6 +16,7 @@ Android app. Paste (or share) a social-media link, **watch it directly** in the 
 | Direct watch | Streams the CDN URL with Media3 ExoPlayer (seek bar, play/pause, 0.5x-2x speed). Only a sliding window around the playback position is buffered, so huge files and live HLS work. A separate audio stream is merged on the fly (`MergingMediaSource`); desktop syncs a second `<audio>` element. |
 | Download | Saves to `Movies/vidspy` (video) or `Pictures/vidspy` (image) through MediaStore. |
 | Share target | Share a link from the Instagram / TikTok / LinkedIn app straight to vidspy. |
+| Error traces | When watching or downloading fails, a trace with the full extractor chain, tracebacks, yt-dlp / gallery-dlp debug logs, the resolved CDN headers and version numbers is written to app-private storage. Download them via **Accounts → Error traces** (phone) or **Diagnostics** (desktop). Nothing is uploaded; secrets are redacted. |
 | Anonymous by default | No login needed. Login-walled posts fail with a clear message, unless you link an account (below). |
 | Suggested links | The empty paste box suggests a real, working example link for every platform (the list comes from the same backend registry as the platform logos). Tap one to fill the field. |
 | Open links from other apps | Tap a supported platform link anywhere and choose vidspy ("Open in app", the app chooser or the share sheet). One-time setup: Settings → Apps → vidspy → **Open by default** → "In the app" (third-party domains can't be auto-verified without the platform owning the site, and a verified app such as YouTube keeps its own links). |
@@ -134,6 +135,21 @@ pip install pytest requests beautifulsoup4 m3u8
 pytest tests            # offline unit tests
 pytest -m live          # anonymous public-video smoke test per platform (needs internet)
 ```
+
+The live smoke test asserts that the platforms known to carry sound actually deliver it:
+one assertion at resolve time (no "No sound" note) and one on the downloaded file (an `soun`
+track must exist after the merge).
+
+## Error traces
+
+Whenever the backend fails to resolve or download (and the players fail to stream), a trace
+report is written to app-private storage: it holds the extractor chain with per-step errors,
+timings and tracebacks, the yt-dlp / gallery-dlp debug logs captured during the resolve, the
+final media item with its CDN headers, linked-account status (cookie *names* only), and
+version numbers. Successful operations never write anything. The apps' Diagnostics entry
+(phone: **Accounts → Error traces**, desktop: **Diagnostics**) packs all reports into one zip
+in the Downloads folder; nothing is uploaded anywhere. Shows up as "Diagnostic trace stored"
+toasts next to each error toast on the phone.
 
 ## Linked accounts
 

@@ -13,6 +13,7 @@ import android.os.Handler
 import android.os.Looper
 import android.text.Editable
 import android.text.TextWatcher
+import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.Menu
@@ -85,6 +86,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
     private var pendingSave: (() -> Unit)? = null
+    private var lastTraceToast: String? = null  // the "trace stored" hint fires once per trace
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -106,8 +108,9 @@ class MainActivity : AppCompatActivity() {
                 btnPlay.text = PLAY_ICON
             }
 
-            override fun onError(message: String) {
+            override fun onError(message: String, detail: String) {
                 setBusy(false)
+                appTrace("playback", message, detail, post?.items?.getOrNull(index))
                 toast(message, long = true)
             }
         })
@@ -204,7 +207,8 @@ class MainActivity : AppCompatActivity() {
                 btnDownload.visibility = View.VISIBLE
                 show()
             } catch (e: Exception) {
-                toast(errorText(e), long = true)
+                Log.e("vidspy", "operation failed", e)
+                toastError(e)
                 setBusy(false)
             }
         }
@@ -234,7 +238,13 @@ class MainActivity : AppCompatActivity() {
             try {
                 showImage(item)
             } catch (e: Exception) {
-                toast(errorText(e), long = true)
+                Log.e("vidspy", "operation failed", e)
+                if (e is IllegalStateException) {  // the image download (traced in Python) worked; decoding failed here
+                    appTrace("playback", errorText(e), item = item)
+                    toast(errorText(e), long = true)
+                } else {
+                    toastError(e)
+                }
                 setBusy(false)
             }
         }
@@ -347,7 +357,8 @@ class MainActivity : AppCompatActivity() {
                 }
                 toast("Saved ${items.size} file(s) to Movies/Pictures › vidspy")
             } catch (e: Exception) {
-                toast(errorText(e), long = true)
+                Log.e("vidspy", "operation failed", e)
+                toastError(e)
             }
             setBusy(false)
         }
@@ -370,8 +381,38 @@ class MainActivity : AppCompatActivity() {
         progress.visibility = if (busy) View.VISIBLE else View.INVISIBLE
     }
 
-    private fun toast(msg: String, long: Boolean = false) =
+    private fun toast(msg: String, long: Boolean = false) {
+        Log.w("vidspy", "toast: $msg")
         Toast.makeText(this, msg, if (long) Toast.LENGTH_LONG else Toast.LENGTH_SHORT).show()
+    }
+
+    /** Errors that surface here (player, image decoding) are recorded by the backend's trace system. */
+    private fun appTrace(stage: String, message: String, detail: String = "", item: MediaItem? = null) {
+        val text = etUrl.text.toString()
+        val platform = post?.platform ?: ""
+        scope.launch {
+            try {
+                withContext(Dispatchers.IO) { backend.traceReport(stage, message, item, detail, text, platform) }
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /** Python already wrote a trace for this failure; hint once per trace where the button lives. */
+    private fun toastError(e: Exception) {
+        toast(errorText(e), long = true)
+        scope.launch {
+            val name = try {
+                withContext(Dispatchers.IO) { backend.lastTraceName() }
+            } catch (_: Exception) {
+                return@launch
+            }
+            if (name.isNotBlank() && name != lastTraceToast) {
+                lastTraceToast = name
+                toast("Diagnostic trace stored · Accounts → Error traces to download")
+            }
+        }
+    }
 
     /** Python errors look like "vidspy_backend.api.VidspyError: message"; show just the message. */
     private fun errorText(e: Exception) = (e.message ?: "Unknown error").substringAfter("VidspyError: ")

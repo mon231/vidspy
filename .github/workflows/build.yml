@@ -27,6 +27,7 @@ jobs:
         run: |
           pip install signapp
           export PATH="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1):$PATH"
+          mkdir -p ~/.reltools
           unsigned=$(ls app/build/outputs/apk/debug/*.apk)
           signapp -a "$unsigned" -o vidspy-signed.apk
           apksigner verify --verbose vidspy-signed.apk

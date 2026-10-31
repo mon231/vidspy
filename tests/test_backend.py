@@ -559,6 +559,36 @@ def test_reddit_parse_image_gallery_and_video():
     assert cross[0]["title"] == "orig"
 
 
+def test_tiktok_api_fallback_items(monkeypatch):
+    """The phone's only working TikTok route: parse the tikwm response (extractors.py)."""
+    from vidspy_backend import extractors
+
+    video = extractors.tikwm_items({
+        "play": "//v19.tiktokcdn-us.com/x/video/tos/a/?a=1",
+        "hdplay": None, "wmplay": "//v19.tiktokcdn-us.com/y.mp4",
+        "cover": "https://p16/cover.jpg", "title": "delicious",
+    })
+    assert len(video) == 1 and video[0]["type"] == "video" and video[0]["ext"] == "mp4"
+    assert video[0]["url"] == "https://v19.tiktokcdn-us.com/x/video/tos/a/?a=1"  # hdplay preferred, // completed
+    assert video[0]["thumbnail"] == "https://p16/cover.jpg"
+
+    images = extractors.tikwm_items({"images": ["https://f/a.jpg", "https://f/b.png"], "title": ""})
+    assert [i["type"] for i in images] == ["image", "image"]
+    assert images[1]["ext"] == "png" and images[0]["ext"] == "jpg"
+
+    assert extractors.tikwm_items({}) == []   # nothing usable -> none
+
+    # errors: the API said no / network path
+    import requests
+    class Resp:
+        status_code = 200
+        def raise_for_status(self): pass
+        def json(self): return {"code": -1, "msg": "FreeApi lies too much, please upgrade"}
+    monkeypatch.setattr(requests, "get", lambda *a, **k: Resp())
+    with pytest.raises(ValueError, match="tikwm said"):
+        extractors.tiktok_api_extract("https://www.tiktok.com/@a/video/1")
+
+
 def test_chrome_session_headers_and_cipher_order():
     from vidspy_backend import browser
     s = browser.chrome_session()

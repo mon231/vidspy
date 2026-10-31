@@ -14,7 +14,8 @@ from .reddit import reddit_extract
 # Extractors tried in order for each platform; first non-empty result wins.
 PLATFORM_EXTRACTORS = {
     "instagram": (ex.ytdlp_extract, ex.gallerydl_extract),
-    "tiktok": (ex.ytdlp_extract, ex.gallerydl_extract),
+    "tiktok": (ex.ytdlp_extract, ex.gallerydl_extract, ex.tiktok_api_extract),
+    # the API fallback above is the phone's only working route: TikTok rejects non-browser TLS
     "linkedin": (ex.html_extract,),
     "youtube": (ex.ytdlp_extract,),
     "twitter": (ex.ytdlp_extract, ex.gallerydl_extract),   # videos/GIFs, then photo tweets

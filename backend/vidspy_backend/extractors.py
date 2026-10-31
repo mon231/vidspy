@@ -298,6 +298,51 @@ def gallerydl_extract(url):
         return items
 
 
+def tikwm_items(data):
+    """Turn a tikwm.com response item into extractor item dicts. Pure function, unit-testable."""
+    title = (data.get("title") or data.get("author", {}).get("unique_id") or "tiktok post")[:80]
+    images = [i for i in (data.get("images") or []) if i]
+    if images:
+        headers = {"User-Agent": DEFAULT_UA, "Referer": "https://www.tiktok.com/"}
+        return [{"type": "image", "url": i, "ext": _ext_from_url(i, "jpg"), "title": title,
+                 "thumbnail": data.get("cover"), "headers": headers} for i in images[:MAX_ITEMS]]
+    for key in ("hdplay", "play", "wmplay"):
+        media_url = data.get(key)
+        if media_url:
+            if media_url.startswith("//"):
+                media_url = "https:" + media_url
+            return [{
+                "type": "video",
+                "url": media_url,
+                "ext": "mp4",
+                "title": title,
+                "thumbnail": data.get("cover"),
+                # the CDN links are signed in the URL itself; a browser-ish UA keeps them serving
+                "headers": {"User-Agent": DEFAULT_UA, "Referer": "https://www.tiktok.com/"},
+            }]
+    return []
+
+
+def tiktok_api_extract(url):
+    """TikTok's web page and its yt-dlp request reject non-browser TLS fingerprints, and
+    yt-dlp's Chrome impersonation (`curl_cffi`) has no on-device build (like Dailymotion above):
+    they fail on the phone. The tikwm.com API serves the same post over common HTTP and returns
+    the item's real tiktokcdn URLs (verified with the phone's failing video) -- kept as the
+    last extractor so yt-dlp/gallery-dl stay first choice wherever they work."""
+    import requests
+
+    resp = requests.get("https://www.tikwm.com/api/", params={"url": url},
+                        headers={"User-Agent": DEFAULT_UA}, timeout=20)
+    resp.raise_for_status()
+    out = resp.json()
+    if out.get("code") != 0:
+        raise ValueError(f"tikwm said: {out.get('msg') or out.get('code')}")
+    items = tikwm_items(out.get("data") or {})
+    if not items:
+        raise ValueError("no media found in the tikwm response")
+    return items
+
+
 def parse_html_media(html):
     """Extract media from a public page. Returns list of item dicts without
     headers (caller adds them). Pure function, unit-testable."""

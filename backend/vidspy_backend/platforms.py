@@ -171,7 +171,31 @@ PLATFORMS = {
 HLS = "hls"  # pseudo-platform: any direct .m3u8 link (no account)
 DIRECT = "direct"  # pseudo-platform: any direct media-file link (.mp4/.jpg/...)
 MEDIA_EXTS = {"mp4", "m4v", "webm", "mkv", "mov", "ts", "3gp", "ogv",
+              "avi", "mpg", "mpeg", "wmv", "flv",
               "jpg", "jpeg", "png", "webp", "gif", "avif", "heic", "bmp"}
+
+# Real, publicly accessible example links (one per platform; tests/test_live.py re-checks them)
+# -- the apps' paste boxes suggest these, so a fresh install can try every platform handsfree.
+SAMPLE_LINKS = {
+    "instagram": "https://instagram.com/p/aye83DjauH/",
+    "tiktok": "https://www.tiktok.com/@tiktok/video/7106594312292453675",
+    "linkedin": ("https://www.linkedin.com/posts/skyperry_shortvideo-a-golden-key-to-businesss-"
+                 "activity-6988053558688456704-W_Ji"),
+    "youtube": "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+    "twitter": "https://twitter.com/NASA/status/1595471051403644929",
+    "facebook": "https://www.facebook.com/facebook/videos/10153231379946729/",
+    "reddit": "https://www.reddit.com/r/videos/comments/6rrwyj/that_small_heart_attack/",
+    "pinterest": "https://www.pinterest.com/pin/424605071144623935/",
+    "vimeo": "https://vimeo.com/22439234",
+    "twitch": "https://clips.twitch.tv/FaintLightGullWholeWheat",
+    "snapchat": ("https://www.snapchat.com/spotlight/"
+                 "W7_EDlXWTBiXAEEniNoMPwAAYdGFzb3FpYXVuAZqDMm6sAZqDMm6VAAAAAQ"),
+    "imgur": "https://imgur.com/gallery/kx2uD3C",
+    "tumblr": "https://www.tumblr.com/anyaboz/765332564457209856/my-music-video-for-selkie-by-nobodys-wolf-child",
+    "dailymotion": "https://www.dailymotion.com/video/x8u4owg",
+    HLS: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
+    DIRECT: "https://download.samplelib.com/mp4/sample-5s.mp4",
+}
 
 
 def detect_platform(url):

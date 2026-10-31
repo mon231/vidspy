@@ -6,7 +6,7 @@ Android app. Paste (or share) a social-media link, **watch it directly** in the 
 - Python backend running on-device via [Chaquopy](https://chaquo.com/chaquopy/)
 - Desktop app (Windows / macOS / Linux, [Eel](https://github.com/python-eel/Eel) GUI) for manual backend testing
 - **One shared backend package** (`backend/vidspy_backend`) used unchanged by both the APK and the desktop app
-- Platforms: **Instagram**, **TikTok**, **LinkedIn**, **YouTube**, **X/Twitter**, **Facebook**, **Reddit**, **Pinterest**, **Vimeo**, **Twitch**, **Snapchat Spotlight**, **Imgur**, **Tumblr**, **Dailymotion** — plus any direct **`.m3u8`** (HLS) or media-file (`.mp4`, `.jpg`, ...) link
+- Platforms: **Instagram**, **TikTok**, **LinkedIn**, **YouTube**, **X/Twitter**, **Facebook**, **Reddit**, **Pinterest**, **Vimeo**, **Twitch**, **Snapchat Spotlight**, **Imgur**, **Tumblr**, **Dailymotion** — plus any direct **`.m3u8`** (HLS) or media-file (`.mp4`, `.jpg`, ...) link over `http(s)` or `ftp(s)`
 - Videos and images, including multi-item carousels
 
 ## Features
@@ -17,6 +17,7 @@ Android app. Paste (or share) a social-media link, **watch it directly** in the 
 | Download | Saves to `Movies/vidspy` (video) or `Pictures/vidspy` (image) through MediaStore. |
 | Share target | Share a link from the Instagram / TikTok / LinkedIn app straight to vidspy. |
 | Anonymous by default | No login needed. Login-walled posts fail with a clear message, unless you link an account (below). |
+| Suggested links | The empty paste box suggests a real, working example link for every platform (the list comes from the same backend registry as the platform logos). Tap one to fill the field. |
 | Linked accounts | **Accounts** button: connect each platform with your browser cookies; used automatically for that platform's links. |
 
 ## Layout
@@ -78,7 +79,7 @@ First extractor returning media wins; errors fall through to the next.
 | Tumblr | yt-dlp → gallery-dl (photos) → built-in scraper on the public `www.tumblr.com` page |
 | Dailymotion | built-in: player metadata endpoint (title, thumbnail, signed HLS manifest) |
 | `.m3u8` URL | built-in HLS validator (`m3u8`) |
-| Direct media file | built-in content-type probe (`.mp4`, `.png`, ... — an HTML page behind such a link is refused) |
+| Direct media file | built-in content-type probe (`.mp4`, `.png`, ... — an HTML page behind such a link is refused); `ftp(s)://` links are probed with status commands only (`TYPE I` + `SIZE`, no body) |
 
 LinkedIn has no yt-dlp extractor for public posts, so vidspy reads `<video data-sources>` / `og:video` / `og:image` from the public post page itself. Tumblr pages are fetched the same way, because gallery-dl shares one Tumblr API key across all its users (it rate-limits with 429) and the legacy `blog.tumblr.com` hosts reject script clients: the fallback reads the public `www.tumblr.com` post page with vidspy's Chrome-like session. Dailymotion is a built-in extractor too: its CDN refuses both yt-dlp and vidspy's Chrome-like TLS clients, but accepts plain `requests` when every manifest and segment request carries the site's `Referer` — resolved items carry those headers for both playback and download.
 
@@ -128,7 +129,7 @@ Only `arm64-v8a` is packaged (see `abiFilters`). Add `x86_64` for emulators.
 Pure-Python tests run on the host, no Android needed. For manual end-to-end tests use the desktop app below.
 
 ```bash
-pip install pytest requests beautifulsoup4
+pip install pytest requests beautifulsoup4 m3u8
 pytest tests            # offline unit tests
 pytest -m live          # anonymous public-video smoke test per platform (needs internet)
 ```
@@ -171,6 +172,7 @@ An eye (spy) with a play button as the iris. `python assets/make_icons.py` regen
 - Imgur, Tumblr and Snapchat resolve anonymously (linked cookies — `accesstoken`, `sid`/`tmgioct`/`logged_in`, `xs` — unlock age-gated or member content; Twitch uses GQL `auth-token`; Dailymotion needs no account for public videos).
 - Live HLS streams can be watched but not downloaded. Stories and profile/playlist links are not supported (only single posts).
 - Dailymotion's HLS manifests are IP- and session-scoped (signed at resolve time): re-resolve the link instead of replaying a stored media URL.
+- FTP (`ftp://`/`ftps://`) items can't be streamed on the phone (its players only speak `http(s)`), so they always download; the desktop app plays them through its local `/media` proxy.
 - Use only for content you have the right to save. Respect each platform's terms and creators' copyright.
 
 ## Roadmap

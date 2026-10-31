@@ -142,3 +142,13 @@ def account_connect(platform, text):
 
 def account_disconnect(platform):
     return json.dumps(accounts.disconnect(platform))
+
+
+def suggestions():
+    """Real, working example links (one per platform + the two pseudo-platforms), for the apps' paste boxes."""
+    out = [{"platform": p, "label": info["label"], "sample": platforms.SAMPLE_LINKS[p], "color": info["color"]}
+           for p, info in platforms.PLATFORMS.items()]
+    extras = {platforms.HLS: "HLS stream (.m3u8)", platforms.DIRECT: "Media file (.mp4/.jpg/...)"}
+    out += [{"platform": p, "label": label, "sample": platforms.SAMPLE_LINKS[p]}
+            for p, label in extras.items()]
+    return json.dumps(out)

@@ -51,7 +51,33 @@ SAMPLES = {
 }
 NO_DOWNLOAD = {"hls"}  # long streams: resolving already validates the playlist
 MAY_BE_IMAGE = {"imgur", "tumblr", "direct"}  # some sample posts are image-only
-WITH_SOUND = {"youtube", "vimeo", "tiktok", "linkedin", "twitter", "facebook", "reddit", "tumblr"}  # sample posts that have audio
+WITH_SOUND = {"youtube", "vimeo", "tiktok", "linkedin", "twitter", "facebook", "reddit", "tumblr"}
+
+# Public anonymous FTP is vanishing; funet's astronomy tree has kept real media for decades.
+FTP_SAMPLES = [
+    "ftp://ftp.funet.fi/pub/astro/images/ccd/Trifid.jpg",
+    "ftp://ftp.funet.fi/pub/astro/solarrep/Images/eclipse.gif",
+    "ftp://ftp.funet.fi/pub/astro/solarrep/comets/01jun98a.mpg",
+    "ftp://ftp.funet.fi/pub/astro/images/ccd/m13b.jpg",
+]
+
+
+@pytest.mark.parametrize("url", FTP_SAMPLES)
+def test_ftp_direct_links(url, tmp_path):
+    for attempt in range(ATTEMPTS):
+        try:
+            post = json.loads(backend.resolve(url))
+            break
+        except Exception as e:  # noqa: BLE001 - retry, FTP data connections drop sometimes
+            if attempt == ATTEMPTS - 1:
+                pytest.fail(f"ftp resolve failed: {e}")
+            time.sleep(2)
+    assert post["platform"] == "direct"
+    item = post["items"][0]
+    assert item["url"] == url and item["note"]  # note: phones stream http(s) only, download instead
+    assert item["ext"] and item["type"] in ("video", "image")
+    path = backend.download(json.dumps(item), str(tmp_path))
+    assert os.path.getsize(path) > 10_000, path  # sample posts that have audio
 
 
 @pytest.fixture(autouse=True)

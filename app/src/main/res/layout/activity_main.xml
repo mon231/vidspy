@@ -10,6 +10,8 @@
 
     <include layout="@layout/part_input" />
 
+    <include layout="@layout/part_suggestions" />
+
     <TextView
         android:id="@+id/tvInfo"
         android:layout_width="match_parent"

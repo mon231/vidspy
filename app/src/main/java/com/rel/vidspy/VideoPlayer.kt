@@ -1,10 +1,12 @@
 package com.rel.vidspy
 
 import android.content.Context
+import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem as ExoItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
@@ -17,6 +19,7 @@ import androidx.media3.ui.PlayerView
  * Streams a video straight from its CDN: only a sliding window around the playback position is
  * buffered, so huge files and live HLS streams work. A separate audio stream is merged on the fly.
  */
+@OptIn(UnstableApi::class)
 class VideoPlayer(
     private val context: Context,
     private val view: PlayerView,

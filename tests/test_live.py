@@ -38,9 +38,46 @@ SAMPLES = {
                   "https://www.pinterest.com/pin/424605071145711021/"],
     "hls": ["https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8",
             "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"],
+    "twitch": ["https://clips.twitch.tv/FaintLightGullWholeWheat"],
+    "snapchat": ["https://www.snapchat.com/spotlight/W7_EDlXWTBiXAEEniNoMPwAAYdGFzb3FpYXVuAZqDMm6sAZqDMm6VAAAAAQ"],
+    "imgur": ["https://imgur.com/gallery/kx2uD3C",
+              "https://imgur.com/gallery/YcAQlkx",
+              "https://imgur.com/a/iX265HX"],
+    "tumblr": ["https://www.tumblr.com/anyaboz/765332564457209856/my-music-video-for-selkie-by-nobodys-wolf-child",
+               "https://www.tumblr.com/silverfoxstole/765305403763556352/jamie-robertson-doctor-who-8th-doctor"],
+    "dailymotion": ["https://www.dailymotion.com/video/x8u4owg"],
+    "direct": ["https://download.samplelib.com/mp4/sample-5s.mp4",
+               "https://upload.wikimedia.org/wikipedia/commons/3/3a/Cat03.jpg"],
 }
 NO_DOWNLOAD = {"hls"}  # long streams: resolving already validates the playlist
-WITH_SOUND = {"youtube", "vimeo", "tiktok", "linkedin", "twitter", "facebook", "reddit"}  # sample posts that have audio
+MAY_BE_IMAGE = {"imgur", "tumblr", "direct"}  # some sample posts are image-only
+WITH_SOUND = {"youtube", "vimeo", "tiktok", "linkedin", "twitter", "facebook", "reddit", "tumblr"}
+
+# Public anonymous FTP is vanishing; funet's astronomy tree has kept real media for decades.
+FTP_SAMPLES = [
+    "ftp://ftp.funet.fi/pub/astro/images/ccd/Trifid.jpg",
+    "ftp://ftp.funet.fi/pub/astro/solarrep/Images/eclipse.gif",
+    "ftp://ftp.funet.fi/pub/astro/solarrep/comets/01jun98a.mpg",
+    "ftp://ftp.funet.fi/pub/astro/images/ccd/m13b.jpg",
+]
+
+
+@pytest.mark.parametrize("url", FTP_SAMPLES)
+def test_ftp_direct_links(url, tmp_path):
+    for attempt in range(ATTEMPTS):
+        try:
+            post = json.loads(backend.resolve(url))
+            break
+        except Exception as e:  # noqa: BLE001 - retry, FTP data connections drop sometimes
+            if attempt == ATTEMPTS - 1:
+                pytest.fail(f"ftp resolve failed: {e}")
+            time.sleep(2)
+    assert post["platform"] == "direct"
+    item = post["items"][0]
+    assert item["url"] == url and item["note"]  # note: phones stream http(s) only, download instead
+    assert item["ext"] and item["type"] in ("video", "image")
+    path = backend.download(json.dumps(item), str(tmp_path))
+    assert os.path.getsize(path) > 10_000, path  # sample posts that have audio
 
 
 @pytest.fixture(autouse=True)
@@ -49,16 +86,18 @@ def anonymous(tmp_path):
     yield
 
 
-def _resolve_first_working(urls):
+def _resolve_first_working(urls, image_ok=False):
     errors = []
     for url in urls:
         for attempt in range(ATTEMPTS):
             try:
                 post = json.loads(backend.resolve(url))
-                video = next((i for i in post["items"] if i["type"] == "video"), None)
-                if video:
-                    return post, video
-                errors.append(f"{url}: no video item")
+                media = next((i for i in post["items"] if i["type"] == "video"), None)
+                if not media and image_ok:
+                    media = next((i for i in post["items"] if i["type"] == "image"), None)
+                if media:
+                    return post, media
+                errors.append(f"{url}: no media item")
                 break
             except Exception as e:  # noqa: BLE001 - collect and retry
                 errors.append(f"{url} (try {attempt + 1}): {e}")
@@ -67,17 +106,17 @@ def _resolve_first_working(urls):
 
 
 def test_every_platform_has_a_sample():
-    assert set(SAMPLES) == set(backend.platforms.PLATFORMS) | {"hls"}
+    assert set(SAMPLES) == set(backend.platforms.PLATFORMS) | {"hls", "direct"}
 
 
 @pytest.mark.parametrize("platform", sorted(SAMPLES))
 def test_anonymous_public_video(platform, tmp_path):
-    post, video = _resolve_first_working(SAMPLES[platform])
+    post, media = _resolve_first_working(SAMPLES[platform], platform in MAY_BE_IMAGE)
     assert post["platform"] == platform
-    assert video["url"].startswith("http") and video["ext"]
+    assert media["url"].startswith("http") and media["ext"] and media["type"] in ("video", "image")
     if platform in NO_DOWNLOAD:
         return
-    path = backend.download(json.dumps(video), str(tmp_path))
+    path = backend.download(json.dumps(media), str(tmp_path))
     assert os.path.getsize(path) > 10_000, path
-    if platform in WITH_SOUND:
+    if platform in WITH_SOUND and media["type"] == "video":
         assert backend.mux.track_samples(path, b"soun"), f"downloaded video has no sound: {path}"

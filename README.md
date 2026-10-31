@@ -6,7 +6,7 @@ Android app. Paste (or share) a social-media link, **watch it directly** in the 
 - Python backend running on-device via [Chaquopy](https://chaquo.com/chaquopy/)
 - Desktop app (Windows / macOS / Linux, [Eel](https://github.com/python-eel/Eel) GUI) for manual backend testing
 - **One shared backend package** (`backend/vidspy_backend`) used unchanged by both the APK and the desktop app
-- Platforms: **Instagram**, **TikTok**, **LinkedIn**, **YouTube**, **X/Twitter**, **Facebook**, **Reddit**, **Pinterest**, **Vimeo**, plus any direct **`.m3u8`** (HLS) link
+- Platforms: **Instagram**, **TikTok**, **LinkedIn**, **YouTube**, **X/Twitter**, **Facebook**, **Reddit**, **Pinterest**, **Vimeo**, **Twitch**, **Snapchat Spotlight**, **Imgur**, **Tumblr**, **Dailymotion** — plus any direct **`.m3u8`** (HLS) or media-file (`.mp4`, `.jpg`, ...) link over `http(s)` or `ftp(s)`
 - Videos and images, including multi-item carousels
 
 ## Features
@@ -17,6 +17,8 @@ Android app. Paste (or share) a social-media link, **watch it directly** in the 
 | Download | Saves to `Movies/vidspy` (video) or `Pictures/vidspy` (image) through MediaStore. |
 | Share target | Share a link from the Instagram / TikTok / LinkedIn app straight to vidspy. |
 | Anonymous by default | No login needed. Login-walled posts fail with a clear message, unless you link an account (below). |
+| Suggested links | The empty paste box suggests a real, working example link for every platform (the list comes from the same backend registry as the platform logos). Tap one to fill the field. |
+| Open links from other apps | Tap a supported platform link anywhere and choose vidspy ("Open in app", the app chooser or the share sheet). One-time setup: Settings → Apps → vidspy → **Open by default** → "In the app" (third-party domains can't be auto-verified without the platform owning the site, and a verified app such as YouTube keeps its own links). |
 | Linked accounts | **Accounts** button: connect each platform with your browser cookies; used automatically for that platform's links. |
 
 ## Layout
@@ -61,20 +63,26 @@ Item = {type: "video"|"image", url, ext, title, thumbnail, headers}
 
 First extractor returning media wins; errors fall through to the next.
 
-| Platform | 1st | 2nd |
-|---|---|---|
-| Instagram | yt-dlp (reels, video posts) | gallery-dl (photo posts, carousels) |
-| TikTok | yt-dlp (videos) | gallery-dl (photo slideshows) |
-| LinkedIn | built-in HTML scraper (`requests` + `beautifulsoup4`) | — |
-| YouTube | yt-dlp (progressive mp4, else HLS) | — |
-| X / Twitter | yt-dlp (videos, GIFs) | gallery-dl (photo tweets, multi-image) |
-| Facebook | yt-dlp (public videos, reels, `fb.watch`) | gallery-dl (photos) |
-| Reddit | yt-dlp (videos) | gallery-dl (images, galleries) |
-| Pinterest | yt-dlp (video pins) | gallery-dl (image pins) |
-| Vimeo | yt-dlp | — |
-| `.m3u8` URL | built-in HLS validator (`m3u8`) | — |
+| Platform | Extractors, tried in order |
+|---|---|
+| Instagram | yt-dlp (reels, video posts) → gallery-dl (photo posts, carousels) |
+| TikTok | yt-dlp (videos) → gallery-dl (photo slideshows) |
+| LinkedIn | built-in HTML scraper (`requests` + `beautifulsoup4`) |
+| YouTube | yt-dlp (progressive mp4, else HLS) |
+| X / Twitter | yt-dlp (videos, GIFs) → gallery-dl (photo tweets, multi-image) |
+| Facebook | yt-dlp (public videos, reels, `fb.watch`) → gallery-dl (photos) |
+| Reddit | built-in Reddit API client → yt-dlp → gallery-dl (images, galleries) |
+| Pinterest | yt-dlp (video pins) → gallery-dl (image pins) |
+| Vimeo | yt-dlp → built-in player-page extractor (`player.vimeo.com` works without login) |
+| Twitch | yt-dlp (clips are a progressive mp4; VODs and live streams are HLS) |
+| Snapchat Spotlight | yt-dlp → gallery-dl (stories, users) |
+| Imgur | yt-dlp (videos, GIFs) → gallery-dl (albums) → direct-link probe for `i.imgur.com` files |
+| Tumblr | yt-dlp → gallery-dl (photos) → built-in scraper on the public `www.tumblr.com` page |
+| Dailymotion | built-in: player metadata endpoint (title, thumbnail, signed HLS manifest) |
+| `.m3u8` URL | built-in HLS validator (`m3u8`) |
+| Direct media file | built-in content-type probe (`.mp4`, `.png`, ... — an HTML page behind such a link is refused); `ftp(s)://` links are probed with status commands only (`TYPE I` + `SIZE`, no body) |
 
-LinkedIn has no yt-dlp extractor for public posts, so vidspy reads `<video data-sources>` / `og:video` / `og:image` from the public post page itself.
+LinkedIn has no yt-dlp extractor for public posts, so vidspy reads `<video data-sources>` / `og:video` / `og:image` from the public post page itself. Tumblr pages are fetched the same way, because gallery-dl shares one Tumblr API key across all its users (it rate-limits with 429) and the legacy `blog.tumblr.com` hosts reject script clients: the fallback reads the public `www.tumblr.com` post page with vidspy's Chrome-like session. Dailymotion is a built-in extractor too: its CDN refuses both yt-dlp and vidspy's Chrome-like TLS clients, but accepts plain `requests` when every manifest and segment request carries the site's `Referer` — resolved items carry those headers for both playback and download.
 
 Viewing never resolves or downloads the whole media. Downloads of a video plus separate audio are merged by `mux.py`, a pure-Python MP4 remuxer (no ffmpeg, no re-encode). Live streams can be watched, not downloaded. It prefers single-file progressive HTTP formats and falls back to HLS. HLS is downloaded by `hls.py`: parse with [`m3u8`](https://github.com/globocom/m3u8), pick the highest-bandwidth variant, concatenate segments into `.ts` (or `.mp4` for fragmented-MP4 playlists). Separate-audio HLS downloads need fMP4 audio; DRM is refused. YouTube mostly offers progressive formats only up to 360p, so expect low quality there.
 
@@ -122,7 +130,7 @@ Only `arm64-v8a` is packaged (see `abiFilters`). Add `x86_64` for emulators.
 Pure-Python tests run on the host, no Android needed. For manual end-to-end tests use the desktop app below.
 
 ```bash
-pip install pytest requests beautifulsoup4
+pip install pytest requests beautifulsoup4 m3u8
 pytest tests            # offline unit tests
 pytest -m live          # anonymous public-video smoke test per platform (needs internet)
 ```
@@ -162,11 +170,14 @@ An eye (spy) with a play button as the iris. `python assets/make_icons.py` regen
 - Without a linked account Vimeo, Reddit, Facebook and X often login-wall posts, so link an account for them;
 - Reddit serves video and audio as separate streams. Merging needs ffmpeg, so Reddit videos play without sound (the app shows a note); private accounts, age/region-gated and login-walled posts fail. Instagram increasingly login-walls anonymous requests; expect failures there.
 - LinkedIn scraping depends on the public page markup and may break.
+- Imgur, Tumblr and Snapchat resolve anonymously (linked cookies — `accesstoken`, `sid`/`tmgioct`/`logged_in`, `xs` — unlock age-gated or member content; Twitch uses GQL `auth-token`; Dailymotion needs no account for public videos).
 - Live HLS streams can be watched but not downloaded. Stories and profile/playlist links are not supported (only single posts).
+- Dailymotion's HLS manifests are IP- and session-scoped (signed at resolve time): re-resolve the link instead of replaying a stored media URL.
+- FTP (`ftp://`/`ftps://`) items can't be streamed on the phone (its players only speak `http(s)`), so they always download; the desktop app plays them through its local `/media` proxy.
 - Use only for content you have the right to save. Respect each platform's terms and creators' copyright.
 
 ## Roadmap
 
 - Linked accounts: encrypt the cookie files at rest (Android Keystore / OS keyring); in-app browser login instead of pasting cookies.
-- More platforms: Threads, Twitch, Bluesky, Snapchat Spotlight (yt-dlp/gallery-dl already support them; add a `PLATFORM_DOMAINS` + `PLATFORM_EXTRACTORS` entry).
+- More platforms: Threads, Bluesky (the bundled yt-dlp and gallery-dl have no extractor for these; they need upstream support first). Twitch, Snapchat, Imgur, Tumblr and Dailymotion were added exactly this way: a `platforms.py` registry entry plus a `PLATFORM_EXTRACTORS` chain, reusing yt-dlp and gallery-dl where they work and plain scrapers where they don't.
 - Quality picker, download history, background downloads with notifications.

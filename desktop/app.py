@@ -73,7 +73,28 @@ def main_gui():
             headers["Range"] = btl.request.headers["Range"]
         target = btl.request.query.get("u") or stream["url"]  # HLS segments/variants arrive via ?u=
         if not target.startswith(("http://", "https://")):
-            btl.abort(400)
+            if not target.startswith(("ftp://", "ftps://")):
+                btl.abort(400)
+            seek = (btl.request.headers.get("Range") or "").split("=", 1)[-1].split("-", 1)[0]
+            try:
+                offset = max(0, int(seek)) if seek.strip() else 0
+            except ValueError:
+                offset = 0
+            from vidspy_backend import ftp
+            try:
+                ext, served, size, data = ftp.open_stream(target, offset)
+            except (ValueError, OSError) as e:
+                btl.abort(502, f"FTP upstream problem: {e}")
+            resp = btl.HTTPResponse(status=206 if served else 200)
+            resp.set_header("Content-Type", ftp.CONTENT_TYPES.get(ext, "application/octet-stream"))
+            resp.set_header("Accept-Ranges", "bytes")
+            if served:
+                resp.set_header("Content-Range", f"bytes {served}-{size - 1}/{size}")
+                resp.set_header("Content-Length", str(size - served))
+            elif size is not None:
+                resp.set_header("Content-Length", str(size))
+            resp.body = data  # chunked: blocks are pulled as the relay sends them
+            return resp
         upstream = requests.get(target, headers=headers, stream=True, timeout=30)
         ctype = upstream.headers.get("Content-Type", "")
         if ".m3u8" in target.split("?")[0].lower() or "mpegurl" in ctype.lower():

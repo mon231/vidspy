@@ -22,10 +22,16 @@ PLATFORM_EXTRACTORS = {
     "reddit": (reddit_extract, ex.ytdlp_extract, ex.gallerydl_extract),     # videos, then image posts/galleries
     "pinterest": (ex.ytdlp_extract, ex.gallerydl_extract),  # video pins, then image pins
     "vimeo": (ex.ytdlp_extract, ex.vimeo_player_extract),
+    "twitch": (ex.ytdlp_extract,),                          # clips (mp4), VODs (HLS) and live streams
+    "snapchat": (ex.ytdlp_extract, ex.gallerydl_extract),   # spotlight pages, then stories/users
+    "imgur": (ex.ytdlp_extract, ex.gallerydl_extract, ex.direct_extract),   # videos/GIFs, then albums; direct i.imgur links
+    "tumblr": (ex.ytdlp_extract, ex.gallerydl_extract, ex.tumblr_html_extract),  # API, then photos; an HTML fallback when the shared API key is rate-limited
+    "dailymotion": (ex.dailymotion_extract,),   # the CDN needs the site's Referer on every m3u8 request
     "hls": (ex.hls_extract,),  # any direct .m3u8 link
+    "direct": (ex.direct_extract,),  # any direct .mp4/.jpg/... media file link
 }
 
-_URL_RE = re.compile(r"https?://[^\s<>\"']+")
+_URL_RE = re.compile(r"(?:https?|ftps?)://[^\s<>\"']+")
 _CONTENT_TYPE_EXT = {
     "video/mp4": "mp4", "video/mp2t": "ts", "video/webm": "webm", "video/quicktime": "mov",
     "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif",
@@ -45,7 +51,8 @@ def resolve(text):
     platform = detect_platform(url)
     if platform is None:
         names = ", ".join(i["label"] for i in platforms.PLATFORMS.values())
-        raise VidspyError(f"Unsupported link. Supported: {names}, .m3u8 playlists.")
+        raise VidspyError(f"Unsupported link. Supported: {names}, .m3u8 playlists, "
+                          "or direct media file links (.mp4, .jpg, ...).")
 
     errors = []
     for extractor in PLATFORM_EXTRACTORS[platform]:
@@ -101,6 +108,10 @@ def download(item_json, dest_dir):
             session = requests.Session()
             session.headers.update(headers)
             return hls.download_hls(session, item["url"], base, audio["url"] if audio else None)
+        url_scheme = urlparse(item["url"]).scheme.lower()
+        if url_scheme in ("ftp", "ftps"):
+            from . import ftp
+            return ftp.download(item["url"], base, item.get("ext") or "mp4")
         if not audio:
             return _http_get(item["url"], headers, base, item.get("ext"), item.get("type"))
 
@@ -131,3 +142,13 @@ def account_connect(platform, text):
 
 def account_disconnect(platform):
     return json.dumps(accounts.disconnect(platform))
+
+
+def suggestions():
+    """Real, working example links (one per platform + the two pseudo-platforms), for the apps' paste boxes."""
+    out = [{"platform": p, "label": info["label"], "sample": platforms.SAMPLE_LINKS[p], "color": info["color"]}
+           for p, info in platforms.PLATFORMS.items()]
+    extras = {platforms.HLS: "HLS stream (.m3u8)", platforms.DIRECT: "Media file (.mp4/.jpg/...)"}
+    out += [{"platform": p, "label": label, "sample": platforms.SAMPLE_LINKS[p]}
+            for p, label in extras.items()]
+    return json.dumps(out)

@@ -6,18 +6,26 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
+import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.text.Editable
+import android.text.TextWatcher
+import android.util.TypedValue
+import android.view.Gravity
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
+import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.EditText
+import android.widget.HorizontalScrollView
 import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.PopupMenu
 import android.widget.ProgressBar
 import android.widget.SeekBar
@@ -62,6 +70,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnSpeed: Button
     private lateinit var seekBar: SeekBar
     private lateinit var tvTime: TextView
+    private lateinit var suggestionsScroll: HorizontalScrollView
+    private lateinit var suggestionsRow: LinearLayout
 
     private var post: ResolvedPost? = null
     private var index = 0
@@ -110,12 +120,30 @@ class MainActivity : AppCompatActivity() {
         btnSpeed = findViewById(R.id.btnSpeed)
         seekBar = findViewById(R.id.seekBar)
         tvTime = findViewById(R.id.tvTime)
+        suggestionsScroll = findViewById(R.id.suggestionsScroll)
+        suggestionsRow = findViewById(R.id.suggestionsRow)
 
         findViewById<Button>(R.id.button).setOnClickListener { fetch() }
         findViewById<Button>(R.id.btnPaste).setOnClickListener { paste() }
         findViewById<Button>(R.id.btnPrev).setOnClickListener { step(-1) }
         findViewById<Button>(R.id.btnNext).setOnClickListener { step(1) }
         btnDownload.setOnClickListener { downloadCurrent() }
+        // Suggestions row follows the box: shown only while it is blank. Registered here, before the
+        // chips load, so the toggle works even when the backend list fails to arrive.
+        etUrl.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+            override fun afterTextChanged(s: Editable?) = updateSuggestionsVisibility()
+        })
+        updateSuggestionsVisibility()
+        // Cosmetic, so failures stay silent and the row simply stays empty.
+        scope.launch {
+            try {
+                val samples = withContext(Dispatchers.IO) { backend.suggestions() }
+                buildSuggestions(samples)
+            } catch (_: Exception) {
+            }
+        }
         etUrl.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_GO) { fetch(); true } else false
         }
@@ -142,8 +170,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleShareIntent(intent: Intent?) {
-        if (intent?.action == Intent.ACTION_SEND) {
-            intent.getStringExtra(Intent.EXTRA_TEXT)?.let {
+        when (intent?.action) {
+            Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)?.let {
+                etUrl.setText(it)
+                fetch()
+            }
+            Intent.ACTION_VIEW -> intent.data?.toString()?.let {   // platform links registered in the manifest
                 etUrl.setText(it)
                 fetch()
             }
@@ -343,6 +375,56 @@ class MainActivity : AppCompatActivity() {
 
     /** Python errors look like "vidspy_backend.api.VidspyError: message"; show just the message. */
     private fun errorText(e: Exception) = (e.message ?: "Unknown error").substringAfter("VidspyError: ")
+
+    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+
+    /** Rounded example-link chips; tapping one fills the box but the user still presses Watch. */
+    private fun buildSuggestions(suggestions: List<Suggestion>) {
+        val ripple = TypedValue().apply {
+            theme.resolveAttribute(android.R.attr.selectableItemBackground, this, true)
+        }.resourceId
+        suggestionsRow.removeAllViews()
+        suggestions.forEach { s ->
+            val color = s.color?.let { Color.parseColor(it) }
+                ?: ContextCompat.getColor(this@MainActivity, R.color.ink)
+            val chip = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_input)
+                if (ripple != 0) foreground = ContextCompat.getDrawable(this@MainActivity, ripple)
+                setPadding(dp(10), dp(8), dp(10), dp(8))
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                ).apply { marginEnd = dp(6) }
+            }
+            // Icon only when the platform has a drawable; hls / direct have none.
+            val iconRes = resources.getIdentifier("ic_platform_${s.platform}", "drawable", packageName)
+            if (iconRes != 0) chip.addView(ImageView(this@MainActivity).apply {
+                setImageResource(iconRes)
+                setColorFilter(color)
+                layoutParams = LinearLayout.LayoutParams(dp(18), dp(18)).apply { marginEnd = dp(6) }
+            })
+            chip.addView(TextView(this@MainActivity).apply {
+                text = s.label
+                textSize = 12f
+                isSingleLine = true
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.ink))
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                ).apply { marginEnd = dp(6) }
+            })
+            chip.setOnClickListener {
+                etUrl.setText(s.sample)
+                etUrl.setSelection(etUrl.text.length)
+            }
+            suggestionsRow.addView(chip)
+        }
+    }
+
+    /** The row is visible exactly while the box is blank, whether chips arrived or not. */
+    private fun updateSuggestionsVisibility() {
+        suggestionsScroll.visibility = if (etUrl.text.isNullOrBlank()) View.VISIBLE else View.GONE
+    }
 
     override fun onStop() {
         super.onStop()

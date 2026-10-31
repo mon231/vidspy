@@ -13,6 +13,7 @@ import android.os.Handler
 import android.os.Looper
 import android.text.Editable
 import android.text.TextWatcher
+import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.Menu
@@ -206,6 +207,7 @@ class MainActivity : AppCompatActivity() {
                 btnDownload.visibility = View.VISIBLE
                 show()
             } catch (e: Exception) {
+                Log.e("vidspy", "operation failed", e)
                 toastError(e)
                 setBusy(false)
             }
@@ -236,6 +238,7 @@ class MainActivity : AppCompatActivity() {
             try {
                 showImage(item)
             } catch (e: Exception) {
+                Log.e("vidspy", "operation failed", e)
                 if (e is IllegalStateException) {  // the image download (traced in Python) worked; decoding failed here
                     appTrace("playback", errorText(e), item = item)
                     toast(errorText(e), long = true)
@@ -354,6 +357,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 toast("Saved ${items.size} file(s) to Movies/Pictures › vidspy")
             } catch (e: Exception) {
+                Log.e("vidspy", "operation failed", e)
                 toastError(e)
             }
             setBusy(false)
@@ -377,8 +381,10 @@ class MainActivity : AppCompatActivity() {
         progress.visibility = if (busy) View.VISIBLE else View.INVISIBLE
     }
 
-    private fun toast(msg: String, long: Boolean = false) =
+    private fun toast(msg: String, long: Boolean = false) {
+        Log.w("vidspy", "toast: $msg")
         Toast.makeText(this, msg, if (long) Toast.LENGTH_LONG else Toast.LENGTH_SHORT).show()
+    }
 
     /** Errors that surface here (player, image decoding) are recorded by the backend's trace system. */
     private fun appTrace(stage: String, message: String, detail: String = "", item: MediaItem? = null) {

@@ -23,8 +23,15 @@ jobs:
       - name: Build APK
         run: bash ./gradlew build
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
+      - name: Sign APK with signapp (same built-in keystore as releases, so it updates in place)
+        run: |
+          pip install signapp
+          export PATH="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1):$PATH"
+          unsigned=$(ls app/build/outputs/apk/debug/*.apk)
+          signapp -a "$unsigned" -o vidspy-signed.apk
+          apksigner verify --verbose vidspy-signed.apk
+
+      - uses: actions/upload-artifact@v4
         with:
           name: vidspy-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: vidspy-signed.apk

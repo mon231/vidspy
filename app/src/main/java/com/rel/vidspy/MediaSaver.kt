@@ -69,7 +69,7 @@ object MediaSaver {
                 put(MediaStore.MediaColumns.RELATIVE_PATH, "$publicDir/$FOLDER")
                 put(MediaStore.MediaColumns.IS_PENDING, 1)
             }
-            val uri = resolver.insert(MediaStore.Downloads.External_CONTENT_URI, values) ?: return null
+            val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return null
             resolver.openOutputStream(uri)?.use { out -> src.inputStream().use { it.copyTo(out) } }
             values.clear()
             values.put(MediaStore.MediaColumns.IS_PENDING, 0)

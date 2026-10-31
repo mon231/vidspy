@@ -2,7 +2,7 @@
 import json
 import re
 
-from . import accounts
+from . import accounts, traces
 
 DEFAULT_UA = (
     "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 "
@@ -133,6 +133,9 @@ def ytdlp_extract(url):
         "ignore_no_formats_error": True,  # YouTube has few single-file formats; we pick from info["formats"]
         "playlistend": 20,
     }
+    if traces.current() is not None:  # tracing (e.g. this resolve may end up failing): keep its debug lines
+        opts["verbose"] = True
+        opts["logger"] = traces.Probe("ytdlp")
     cookies = accounts.cookie_file_for_url(url)
     if cookies:  # linked account (see accounts.py)
         opts["cookiefile"] = cookies
@@ -268,30 +271,31 @@ def gallerydl_extract(url):
 
     config.set(("extractor",), "cookies", accounts.cookie_file_for_url(url))  # None = anonymous
 
-    ex = extractor.find(url)
-    if ex is None:
-        raise ValueError("gallery-dl does not support this URL")
-    if hasattr(ex, "initialize"):
-        ex.initialize()
+    with traces.Probe("gallerydl") as probe:  # logs go into the trace only if one runs
+        ex = extractor.find(url)
+        if ex is None:
+            raise ValueError("gallery-dl does not support this URL")
+        if hasattr(ex, "initialize"):
+            ex.initialize()
 
-    items = []
-    for msg in ex:
-        if msg[0] != Message.Url:
-            continue
-        media_url, kw = msg[1], msg[2]
-        ext = (kw.get("extension") or _ext_from_url(media_url, "jpg")).lower()
-        items.append({
-            "type": _kind(ext),
-            "url": media_url,
-            "ext": ext,
-            "title": str(kw.get("description") or kw.get("title") or kw.get("post_shortcode")
-                         or kw.get("tiktok_id") or "post")[:80],
-            "thumbnail": media_url if _kind(ext) == "image" else None,
-            "headers": _session_headers(ex.session, media_url, f"{getattr(ex, 'root', '')}/" if getattr(ex, "root", "") else None),
-        })
-        if len(items) >= MAX_ITEMS:
-            break
-    return items
+        items = []
+        for msg in ex:
+            if msg[0] != Message.Url:
+                continue
+            media_url, kw = msg[1], msg[2]
+            ext = (kw.get("extension") or _ext_from_url(media_url, "jpg")).lower()
+            items.append({
+                "type": _kind(ext),
+                "url": media_url,
+                "ext": ext,
+                "title": str(kw.get("description") or kw.get("title") or kw.get("post_shortcode")
+                             or kw.get("tiktok_id") or "post")[:80],
+                "thumbnail": media_url if _kind(ext) == "image" else None,
+                "headers": _session_headers(ex.session, media_url, f"{getattr(ex, 'root', '')}/" if getattr(ex, "root", "") else None),
+            })
+            if len(items) >= MAX_ITEMS:
+                break
+        return items
 
 
 def parse_html_media(html):

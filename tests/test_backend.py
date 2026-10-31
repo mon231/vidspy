@@ -586,3 +586,93 @@ def test_version_is_single_dynamic_source():
     assert not re.search(r"^version\s*=", text.split("[tool.")[0], re.M)
     assert "vidspy_backend._version.__version__" in text
     assert vidspy_backend.__version__
+
+
+# -- error traces: only on failures, secrets redacted (see vidspy_backend/traces.py) --
+
+@pytest.fixture
+def traced(tmp_path):
+    logic.configure(str(tmp_path))
+    yield tmp_path / "traces"
+    from vidspy_backend import traces
+    traces.end()
+    traces._dir = None
+    traces._last = None
+
+
+def test_trace_written_only_on_errors(traced, monkeypatch):
+    item = {"type": "video", "url": "https://cdn/x.mp4", "ext": "mp4", "title": "t", "headers": {}}
+    monkeypatch.setitem(logic.PLATFORM_EXTRACTORS, "tiktok", (lambda u: [item],))
+    out = json.loads(logic.resolve("https://www.tiktok.com/@a/video/1"))
+    assert out["platform"] == "tiktok"
+    assert list(traced.glob("*.json")) == []  # success -> nothing was written
+
+    monkeypatch.setitem(logic.PLATFORM_EXTRACTORS, "tiktok", (lambda u: None,))  # no media
+    with pytest.raises(logic.VidspyError):
+        logic.resolve("https://vm.tiktok.com/xyz/")
+
+    files = list(traced.glob("*.json"))
+    assert len(files) == 1
+    data = json.load(open(files[0], encoding="utf-8"))
+    assert data["stage"] == "resolve" and data["input"]["platform"] == "tiktok"
+    assert data["error"]["type"] == "VidspyError" and data["error"]["traceback"]
+    assert data["steps"][0]["step"] == "<lambda>" and data["steps"][0]["items"] == 0  # the chain ran, found nothing
+    assert data["app"]["yt_dlp"] and data["app"]["vidspy"]  # versions are in there for backwards debugging
+
+
+def test_trace_linked_account_cookie_names_not_values(traced):
+    from vidspy_backend import accounts
+
+    accounts.connect("tiktok", "sessionid=TOKEN_VALUE; other=zzz")
+    logic.trace_report("playback", "HTTP 403", None, "", "https://www.tiktok.com/@a/video/1", "tiktok")
+    data = json.load(open(traced / logic.last_trace_name(), encoding="utf-8"))
+    assert "sessionid" in data["linked_account"]["tiktok"]   # names are the useful part
+    assert "TOKEN_VALUE" not in json.dumps(data)             # values never leave the app
+
+
+def test_trace_headers_and_item_redacted(traced):
+    item = {"type": "video", "url": "https://cdn/x.mp4", "ext": "mp4", "title": "t",
+            "headers": {"Cookie": "sessionid=SECRET_VAL; other=V", "User-Agent": "UA"},
+            "audio": {"url": "https://cdn/a.m4a", "ext": "m4a", "headers": {"Cookie": "sid=SECRET2"}}}
+    logic.trace_report("playback", "Cannot play this video", json.dumps(item), "ERR: cause", "", "tiktok")
+    raw = open(traced / logic.last_trace_name(), encoding="utf-8").read()
+    data = json.loads(raw)
+    assert "SECRET_VAL" not in raw and "SECRET2" not in raw
+    assert "sessionid" in data["item"]["headers"]["Cookie"]  # names kept: what was attached?
+    assert data["item"]["headers"]["User-Agent"] == "UA"     # non-secret headers stay complete
+    assert data["error"]["detail"] == "ERR: cause"
+
+
+def test_trace_steps_and_logs_from_a_traced_resolve(traced, monkeypatch):
+    import logging
+
+    from vidspy_backend import traces
+
+    def loud_extractor(url):
+        t = traces.current()
+        assert t is not None
+        t.logs["ytdlp"]  # a probe writes here
+        return []
+
+    monkeypatch.setitem(logic.PLATFORM_EXTRACTORS, "tiktok", (loud_extractor,))
+    with pytest.raises(logic.VidspyError):
+        with traces.Probe("ytdlp"):  # like a real extractor that attaches its own logger
+            logic.resolve("https://www.tiktok.com/@a/video/1")
+    data = json.load(open(traced / logic.last_trace_name(), encoding="utf-8"))
+    assert any(s["step"] == "loud_extractor" for s in data["steps"])
+    probe = traces.Probe("ytdlp")  # records into the (already ended) trace: no-op, stays silent
+    probe.debug("should be ignored")
+    assert data.get("logs") is None
+
+
+def test_trace_pack_takes_every_report_for_the_button(traced, tmp_path):
+    assert logic.trace_pack(str(tmp_path)) is None  # nothing failed yet: no zip, the button says so
+    logic.trace_report("playback", "boom", None, "", "", "")
+    logic.trace_report("playback", "bam", None, "", "", "")
+    assert logic.traces_count() == 2
+    zip_path = logic.trace_pack(str(tmp_path))
+    import zipfile
+
+    with zipfile.ZipFile(zip_path) as z:
+        assert len(z.namelist()) == 2 and all(n.endswith(".json") for n in z.namelist())
+    assert os.path.basename(zip_path).startswith("vidspy-traces-")

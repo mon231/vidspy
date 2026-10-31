@@ -55,4 +55,32 @@ object MediaSaver {
         MediaScannerConnection.scanFile(context, arrayOf(dest.path), arrayOf(mime), null)
         return Uri.fromFile(dest)
     }
+
+    /** Copies a document (the error-traces zip) into Downloads/vidspy. */
+    fun saveDocument(context: Context, src: File): Uri? {
+        val mime = "application/zip"
+        val publicDir = Environment.DIRECTORY_DOWNLOADS
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val resolver = context.contentResolver
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, src.name)
+                put(MediaStore.MediaColumns.MIME_TYPE, mime)
+                put(MediaStore.MediaColumns.RELATIVE_PATH, "$publicDir/$FOLDER")
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+            val uri = resolver.insert(MediaStore.Downloads.External_CONTENT_URI, values) ?: return null
+            resolver.openOutputStream(uri)?.use { out -> src.inputStream().use { it.copyTo(out) } }
+            values.clear()
+            values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+            resolver.update(uri, values, null, null)
+            return uri
+        }
+
+        val dir = File(Environment.getExternalStoragePublicDirectory(publicDir), FOLDER).apply { mkdirs() }
+        val dest = File(dir, src.name)
+        src.copyTo(dest, overwrite = true)
+        MediaScannerConnection.scanFile(context, arrayOf(dest.path), arrayOf(mime), null)
+        return Uri.fromFile(dest)
+    }
 }

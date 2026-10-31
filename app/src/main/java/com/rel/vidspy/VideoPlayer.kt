@@ -28,7 +28,7 @@ class VideoPlayer(
     interface Events {
         fun onBuffering(buffering: Boolean)
         fun onEnded()
-        fun onError(message: String)
+        fun onError(message: String, detail: String)
     }
 
     private var player: ExoPlayer? = null
@@ -54,7 +54,19 @@ class VideoPlayer(
             }
 
             override fun onPlayerError(error: PlaybackException) {
-                events.onError(error.cause?.message ?: error.message ?: "Cannot play this video")
+                // the code name plus the cause chain is what the trace needs to name the transport problem
+                val chain = buildString {
+                    var cause: Throwable? = error.cause
+                    var first = true
+                    while (cause != null) {
+                        if (!first) append(" <- ")
+                        append(cause.javaClass.simpleName)
+                        cause.message?.let { append(": ").append(it) }
+                        cause = cause.cause
+                        first = false
+                    }
+                }
+                events.onError(error.message ?: "Cannot play this video", "${error.errorCodeName}: $chain")
             }
         })
         val video = source(item.url, item.headers, item.ext == "m3u8")

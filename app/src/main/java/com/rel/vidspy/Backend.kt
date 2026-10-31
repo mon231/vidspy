@@ -33,21 +33,22 @@ data class Suggestion(
     val label: String,
     val sample: String,
     val color: String? = null,
-)
-
-private fun JSONObject.toSuggestion() = Suggestion(
+)private fun JSONObject.toSuggestion() = Suggestion(
     platform = getString("platform"),
     label = getString("label"),
     sample = getString("sample"),
     color = if (has("color")) getString("color") else null,
 )
 
+/** Error traces stored by the backend (written only when watching or downloading fails). */
+data class TraceFiles(val dir: String, val count: Int, val files: List<String>)
+
 /** Thin wrapper over the Python package `vidspy_backend`. Blocking: call from a background thread. */
 class Backend(filesDir: File) {
     private val module by lazy { Python.getInstance().getModule("vidspy_backend") }
 
     init {
-        module.callAttr("configure", File(filesDir, "accounts").absolutePath)
+        module.callAttr("configure", filesDir.absolutePath)
     }
 
     fun resolve(text: String): ResolvedPost =
@@ -71,5 +72,26 @@ class Backend(filesDir: File) {
     fun suggestions(): List<Suggestion> {
         val arr = org.json.JSONArray(module.callAttr("suggestions").toString())
         return (0 until arr.length()).map { arr.getJSONObject(it).toSuggestion() }
+    }
+
+    // -- error traces (written by the backend itself on resolve/download failures) --
+
+    /** Stored traces: {dir, count, files}. */
+    fun tracesInfo(): TraceFiles = JSONObject(module.callAttr("traces_info").toString()).let {
+        TraceFiles(it.getString("dir"), it.getInt("count"), files = (0 until it.getJSONArray("files").length())
+            .map { i -> it.getJSONArray("files").getString(i) })
+    }
+
+    /** Reports an error that happened outside Python (a player / decoder failure). */
+    fun traceReport(stage: String, message: String, item: MediaItem? = null,
+                    detail: String = "", text: String = "", platform: String = ""): String =
+        module.callAttr("trace_report", stage, message, item?.raw, detail, text, platform).toString()
+
+    fun lastTraceName(): String = module.callAttr("last_trace_name").toString()
+
+    /** Zips every stored trace; None when nothing has failed yet. */
+    fun tracePack(destDir: File): File? {
+        val path = module.callAttr("trace_pack", destDir.absolutePath).toString()
+        return path.takeUnless { it.isEmpty() || it == "None" }?.let(::File)
     }
 }

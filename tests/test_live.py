@@ -119,4 +119,8 @@ def test_anonymous_public_video(platform, tmp_path):
     path = backend.download(json.dumps(media), str(tmp_path))
     assert os.path.getsize(path) > 10_000, path
     if platform in WITH_SOUND and media["type"] == "video":
+        # resolve must already pick a source that carries sound (`_choose` merges a second stream
+        # if the format itself is silent), and the downloaded file must actually contain an
+        # audio track -- playing one of these without sound is what error traces are for.
+        assert not (media.get("note") or "").startswith("No sound"), media
         assert backend.mux.track_samples(path, b"soun"), f"downloaded video has no sound: {path}"

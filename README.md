@@ -18,6 +18,7 @@ Android app. Paste (or share) a social-media link, **watch it directly** in the 
 | Share target | Share a link from the Instagram / TikTok / LinkedIn app straight to vidspy. |
 | Anonymous by default | No login needed. Login-walled posts fail with a clear message, unless you link an account (below). |
 | Suggested links | The empty paste box suggests a real, working example link for every platform (the list comes from the same backend registry as the platform logos). Tap one to fill the field. |
+| Open links from other apps | Tap a supported platform link anywhere and choose vidspy ("Open in app", the app chooser or the share sheet). One-time setup: Settings → Apps → vidspy → **Open by default** → "In the app" (third-party domains can't be auto-verified without the platform owning the site, and a verified app such as YouTube keeps its own links). |
 | Linked accounts | **Accounts** button: connect each platform with your browser cookies; used automatically for that platform's links. |
 
 ## Layout

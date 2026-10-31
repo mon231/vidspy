@@ -13,6 +13,7 @@ import android.os.Handler
 import android.os.Looper
 import android.text.Editable
 import android.text.TextWatcher
+import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.Menu
@@ -204,6 +205,7 @@ class MainActivity : AppCompatActivity() {
                 btnDownload.visibility = View.VISIBLE
                 show()
             } catch (e: Exception) {
+                Log.e("vidspy", "operation failed", e)
                 toast(errorText(e), long = true)
                 setBusy(false)
             }
@@ -234,6 +236,7 @@ class MainActivity : AppCompatActivity() {
             try {
                 showImage(item)
             } catch (e: Exception) {
+                Log.e("vidspy", "operation failed", e)
                 toast(errorText(e), long = true)
                 setBusy(false)
             }
@@ -347,6 +350,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 toast("Saved ${items.size} file(s) to Movies/Pictures › vidspy")
             } catch (e: Exception) {
+                Log.e("vidspy", "operation failed", e)
                 toast(errorText(e), long = true)
             }
             setBusy(false)
@@ -370,8 +374,10 @@ class MainActivity : AppCompatActivity() {
         progress.visibility = if (busy) View.VISIBLE else View.INVISIBLE
     }
 
-    private fun toast(msg: String, long: Boolean = false) =
+    private fun toast(msg: String, long: Boolean = false) {
+        Log.w("vidspy", "toast: $msg")
         Toast.makeText(this, msg, if (long) Toast.LENGTH_LONG else Toast.LENGTH_SHORT).show()
+    }
 
     /** Python errors look like "vidspy_backend.api.VidspyError: message"; show just the message. */
     private fun errorText(e: Exception) = (e.message ?: "Unknown error").substringAfter("VidspyError: ")

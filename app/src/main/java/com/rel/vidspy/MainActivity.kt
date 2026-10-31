@@ -170,8 +170,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleShareIntent(intent: Intent?) {
-        if (intent?.action == Intent.ACTION_SEND) {
-            intent.getStringExtra(Intent.EXTRA_TEXT)?.let {
+        when (intent?.action) {
+            Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)?.let {
+                etUrl.setText(it)
+                fetch()
+            }
+            Intent.ACTION_VIEW -> intent.data?.toString()?.let {   // platform links registered in the manifest
                 etUrl.setText(it)
                 fetch()
             }

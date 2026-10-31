@@ -527,6 +527,17 @@ def test_every_platform_has_extractors_and_android_logo():
         assert platforms.PLATFORMS[name]["icon"] in open(drawable, encoding="utf-8").read()
 
 
+def test_manifest_opens_every_platform_domain():
+    root = os.path.join(os.path.dirname(__file__), "..")
+    manifest = open(os.path.join(root, "app", "src", "main", "AndroidManifest.xml"),
+                    encoding="utf-8").read()
+    action_view = manifest.split("android.intent.action.VIEW", 1)[1].split("</intent-filter>", 1)[0]
+    for info in platforms.PLATFORMS.values():  # links opened from other apps must reach vidspy
+        for domain in info["domains"]:
+            # every full domain may also appear WITHOUT the "*" wildcard, so require either form
+            assert f'"*.{domain}"' in action_view or f'"{domain}"' in action_view, domain
+
+
 def test_reddit_parse_image_gallery_and_video():
     from vidspy_backend import reddit
     img = reddit.parse_post({"title": "t", "post_hint": "image", "url": "https://i.redd.it/a.jpeg",

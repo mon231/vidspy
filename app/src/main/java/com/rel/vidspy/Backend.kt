@@ -27,6 +27,21 @@ private fun JSONObject.toAccount() = Account(
     privacy = getString("privacy"),
 )
 
+/** A working example link for the paste box; [color] has no value for the pseudo platforms (hls, direct). */
+data class Suggestion(
+    val platform: String,
+    val label: String,
+    val sample: String,
+    val color: String? = null,
+)
+
+private fun JSONObject.toSuggestion() = Suggestion(
+    platform = getString("platform"),
+    label = getString("label"),
+    sample = getString("sample"),
+    color = if (has("color")) getString("color") else null,
+)
+
 /** Thin wrapper over the Python package `vidspy_backend`. Blocking: call from a background thread. */
 class Backend(filesDir: File) {
     private val module by lazy { Python.getInstance().getModule("vidspy_backend") }
@@ -51,4 +66,10 @@ class Backend(filesDir: File) {
 
     fun disconnect(platform: String): Account =
         JSONObject(module.callAttr("account_disconnect", platform).toString()).toAccount()
+
+    /** Example links, one per platform, in the backend's order. */
+    fun suggestions(): List<Suggestion> {
+        val arr = org.json.JSONArray(module.callAttr("suggestions").toString())
+        return (0 until arr.length()).map { arr.getJSONObject(it).toSuggestion() }
+    }
 }

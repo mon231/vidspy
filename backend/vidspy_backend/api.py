@@ -28,6 +28,7 @@ PLATFORM_EXTRACTORS = {
     "imgur": (ex.ytdlp_extract, ex.gallerydl_extract, ex.direct_extract),   # videos/GIFs, then albums; direct i.imgur links
     "tumblr": (ex.ytdlp_extract, ex.gallerydl_extract, ex.tumblr_html_extract),  # API, then photos; an HTML fallback when the shared API key is rate-limited
     "dailymotion": (ex.dailymotion_extract,),   # the CDN needs the site's Referer on every m3u8 request
+    "1hd": (ex.onehd_extract,),  # 1hd.one movie/series pages: try each listed provider
     "hls": (ex.hls_extract,),  # any direct .m3u8 link
     "direct": (ex.direct_extract,),  # any direct .mp4/.jpg/... media file link
 }

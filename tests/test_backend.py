@@ -102,6 +102,8 @@ def test_best_progressive_skips_hls_and_prefers_audio():
     ("https://tmblr.co/abc", "tumblr"),
     ("https://www.dailymotion.com/video/x8abc", "dailymotion"),
     ("https://dai.ly/x94cnnk", "dailymotion"),
+    ("https://1hd.one/movie/inside-out-2-15957/", "1hd"),
+    ("https://1hd.one/series/wisdom-of-the-crowd-75317/1-1/", "1hd"),
     ("https://example.com/a/clip.MP4", "direct"),
     ("https://example.com/img/photo.png?width=1", "direct"),
     ("https://example.com/anim.webm", "direct"),
@@ -448,7 +450,7 @@ def test_connect_rejects_bad_input(acc):
 def test_accounts_list_covers_all_platforms(acc):
     out = json.loads(logic.accounts_list())
     assert {a["platform"] for a in out} == set(platforms.PLATFORMS)  # pseudo-platforms stay out
-    assert len(out) == 14
+    assert len(out) == 15
     for a in out:
         assert not a["connected"] and len(a["steps"]) == 3 and a["privacy"]
         assert a["login_url"].startswith("https://") and a["icon"] and a["color"].startswith("#")

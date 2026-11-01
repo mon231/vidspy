@@ -46,10 +46,12 @@ SAMPLES = {
     "tumblr": ["https://www.tumblr.com/anyaboz/765332564457209856/my-music-video-for-selkie-by-nobodys-wolf-child",
                "https://www.tumblr.com/silverfoxstole/765305403763556352/jamie-robertson-doctor-who-8th-doctor"],
     "dailymotion": ["https://www.dailymotion.com/video/x8u4owg"],
+    "1hd": ["https://1hd.one/movie/inside-out-2-15957/",
+            "https://1hd.one/series/wisdom-of-the-crowd-75317/1-1/"],
     "direct": ["https://download.samplelib.com/mp4/sample-5s.mp4",
                "https://upload.wikimedia.org/wikipedia/commons/3/3a/Cat03.jpg"],
 }
-NO_DOWNLOAD = {"hls"}  # long streams: resolving already validates the playlist
+NO_DOWNLOAD = {"hls", "1hd"}  # long streams: resolving already validates the playlist
 MAY_BE_IMAGE = {"imgur", "tumblr", "direct"}  # some sample posts are image-only
 WITH_SOUND = {"youtube", "vimeo", "tiktok", "linkedin", "twitter", "facebook", "reddit", "tumblr"}
 
@@ -124,3 +126,11 @@ def test_anonymous_public_video(platform, tmp_path):
         # audio track -- playing one of these without sound is what error traces are for.
         assert not (media.get("note") or "").startswith("No sound"), media
         assert backend.mux.track_samples(path, b"soun"), f"downloaded video has no sound: {path}"
+
+
+@pytest.mark.parametrize("url", SAMPLES["1hd"])
+def test_anonymous_public_video_1hd(url):
+    # both the movie layout and the series/episode layout must work on their own
+    post, media = _resolve_first_working([url])
+    assert post["platform"] == "1hd"
+    assert media["type"] == "video" and media["ext"] == "m3u8"

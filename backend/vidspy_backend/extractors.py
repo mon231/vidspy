@@ -400,6 +400,45 @@ def parse_html_media(html):
     return items
 
 
+def onehd_extract(url):
+    """1hd.one movie/series pages list several providers (Vidmoly, UpCloud, ...);
+    fetch that list and try each provider until one yields playable media."""
+    import requests
+    import re as _re
+
+    headers = {"User-Agent": DEFAULT_UA, "Accept-Language": "en-US,en;q=0.9"}
+    resp = requests.get(url, headers=headers, timeout=20, allow_redirects=True)
+    resp.raise_for_status()
+    text = resp.text
+
+    m = _re.search(r"pl_url\s*=\s*['\"]([^'\"]+)['\"]", text)
+    if not m:
+        m = _re.search(r"(https?://[^'\"]+/ajax/ajax\.php\?[^'\"]+)", text)
+    if not m:
+        raise ValueError("no provider list found on the 1hd page")
+    pl_url = m.group(1)
+
+    prov_resp = requests.get(pl_url, headers={"User-Agent": DEFAULT_UA,
+                                             "Referer": url}, timeout=20)
+    prov_resp.raise_for_status()
+    provider_urls = _re.findall(r'data-id="(https://[^"]+)"', prov_resp.text)
+    if not provider_urls:
+        raise ValueError("no providers listed on the 1hd page")
+
+    last_error = None
+    for purl in provider_urls:
+        try:
+            items = ytdlp_extract(purl)
+        except Exception as e:  # try next provider
+            last_error = e
+            continue
+        if items:
+            for it in items:
+                it.setdefault("headers", {}).setdefault("Referer", purl)
+            return items[:MAX_ITEMS]
+    raise ValueError(f"no available provider ({last_error})")
+
+
 def html_extract(url):
     import requests
 
@@ -471,3 +510,10 @@ def direct_extract(url):
     name = final.split("?")[0].rstrip("/").rsplit("/", 1)[-1] or "file"
     return [{"type": _kind(ext), "url": final, "ext": ext,
              "title": name.rsplit(".", 1)[0] or "file", "thumbnail": None, "headers": headers}]
+
+
+# aliases for the 1hd.one extractor
+one_hd_extract = onehd_extract
+hd1_extract = onehd_extract
+hd_one_extract = onehd_extract
+onehdone_extract = onehd_extract

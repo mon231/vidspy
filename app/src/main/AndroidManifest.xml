@@ -66,6 +66,7 @@
                 <data android:host="*.dailymotion.com" />
                 <data android:host="*.dai.ly" />
                 <data android:host="*.vimeo.com" />
+                <data android:host="*.1hd.one" />
             </intent-filter>
         </activity>
         <activity android:name=".SettingsActivity"

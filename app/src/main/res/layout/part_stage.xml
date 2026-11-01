@@ -43,6 +43,17 @@
             android:visibility="gone" />
 
         <ImageButton
+            android:id="@+id/btnFullscreen"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_gravity="top|start"
+            android:layout_margin="10dp"
+            android:background="@drawable/bg_fab"
+            android:contentDescription="Fullscreen"
+            android:src="@drawable/ic_fullscreen"
+            android:visibility="gone" />
+
+        <ImageButton
             android:id="@+id/btnDownload"
             android:layout_width="44dp"
             android:layout_height="44dp"

@@ -63,6 +63,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var playerView: PlayerView
     private lateinit var player: VideoPlayer
     private lateinit var imageView: ImageView
+    private lateinit var btnFullscreen: ImageView
     private lateinit var navLayout: View
     private lateinit var controlLayout: View
     private lateinit var btnDownload: View
@@ -78,6 +79,8 @@ class MainActivity : AppCompatActivity() {
     private var index = 0
     private var showJob: Job? = null
     private var dragging = false
+    private var fullscreen = false
+    private var fullscreenSaved: Map<View, Int> = emptyMap()
     private val handler = Handler(Looper.getMainLooper())
     private val ticker = object : Runnable {
         override fun run() {
@@ -118,6 +121,8 @@ class MainActivity : AppCompatActivity() {
         navLayout = findViewById(R.id.navLayout)
         controlLayout = findViewById(R.id.controlLayout)
         btnDownload = findViewById(R.id.btnDownload)
+        btnFullscreen = findViewById(R.id.btnFullscreen)
+        btnFullscreen.setOnClickListener { toggleFullscreen() }
         tvEmpty = findViewById(R.id.tvEmpty)
         btnPlay = findViewById(R.id.btnPlay)
         btnSpeed = findViewById(R.id.btnSpeed)
@@ -230,6 +235,7 @@ class MainActivity : AppCompatActivity() {
         if (item.type == MediaType.VIDEO) {
             playerView.visibility = View.VISIBLE
             controlLayout.visibility = View.VISIBLE
+            btnFullscreen.visibility = View.VISIBLE
             btnPlay.text = PAUSE_ICON
             player.play(item)
             return
@@ -274,6 +280,42 @@ class MainActivity : AppCompatActivity() {
         player.release()
         seekBar.progress = 0
         tvTime.text = "0:00 / 0:00"
+    }
+
+    /** Fullscreen: hide everything around the stage and the system bars. */
+    private fun toggleFullscreen() {
+        if (fullscreen) exitFullscreen() else enterFullscreen()
+    }
+
+    private fun enterFullscreen() {
+        if (fullscreen) return
+        fullscreen = true
+        val roots = listOfNotNull((etUrl.parent as? LinearLayout), tvInfo, suggestionsScroll, navLayout)
+        fullscreenSaved = roots.filter { it.visibility != View.GONE }.associateWith { it.visibility }
+        roots.forEach { it.visibility = View.GONE }
+        supportActionBar?.hide()
+        window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_FULLSCREEN or
+            View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+        btnFullscreen.setImageResource(R.drawable.ic_fullscreen_exit)
+    }
+
+    private fun exitFullscreen() {
+        if (!fullscreen) return
+        fullscreen = false
+        supportActionBar?.show()
+        fullscreenSaved.forEach { (view, visibility) -> view.visibility = visibility }
+        fullscreenSaved = emptyMap()
+        window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
+        btnFullscreen.setImageResource(R.drawable.ic_fullscreen)
+    }
+
+    override fun onBackPressed() {
+        if (fullscreen) {
+            exitFullscreen()
+        } else {
+            super.onBackPressed()
+        }
     }
 
     private fun setupControls() {

@@ -1,6 +1,7 @@
 package com.rel.vidspy
 
 import android.Manifest
+import android.app.Dialog
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
@@ -20,10 +21,13 @@ import android.view.Menu
 import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
+import android.view.Window
+import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -57,12 +61,15 @@ class MainActivity : AppCompatActivity() {
     private lateinit var cacheRoot: File
 
     private lateinit var etUrl: EditText
+    private var fullscreenDialog: Dialog? = null
+    private var screenRoot: FrameLayout? = null
     private lateinit var tvInfo: TextView
     private lateinit var tvCounter: TextView
     private lateinit var progress: ProgressBar
     private lateinit var playerView: PlayerView
     private lateinit var player: VideoPlayer
     private lateinit var imageView: ImageView
+    private lateinit var btnFullscreen: ImageView
     private lateinit var navLayout: View
     private lateinit var controlLayout: View
     private lateinit var btnDownload: View
@@ -78,6 +85,15 @@ class MainActivity : AppCompatActivity() {
     private var index = 0
     private var showJob: Job? = null
     private var dragging = false
+    private var fullscreen = false
+
+    private data class SavedSlot(
+        val parent: ViewGroup,
+        val index: Int,
+        val params: ViewGroup.LayoutParams
+    )
+
+    private val fullscreenSaved = mutableMapOf<View, SavedSlot>()
     private val handler = Handler(Looper.getMainLooper())
     private val ticker = object : Runnable {
         override fun run() {
@@ -118,6 +134,8 @@ class MainActivity : AppCompatActivity() {
         navLayout = findViewById(R.id.navLayout)
         controlLayout = findViewById(R.id.controlLayout)
         btnDownload = findViewById(R.id.btnDownload)
+        btnFullscreen = findViewById(R.id.btnFullscreen)
+        btnFullscreen.setOnClickListener { toggleFullscreen() }
         tvEmpty = findViewById(R.id.tvEmpty)
         btnPlay = findViewById(R.id.btnPlay)
         btnSpeed = findViewById(R.id.btnSpeed)
@@ -230,6 +248,7 @@ class MainActivity : AppCompatActivity() {
         if (item.type == MediaType.VIDEO) {
             playerView.visibility = View.VISIBLE
             controlLayout.visibility = View.VISIBLE
+            btnFullscreen.visibility = View.VISIBLE
             btnPlay.text = PAUSE_ICON
             player.play(item)
             return
@@ -274,6 +293,72 @@ class MainActivity : AppCompatActivity() {
         player.release()
         seekBar.progress = 0
         tvTime.text = "0:00 / 0:00"
+    }
+
+    /** Fullscreen: move the video and its controls into a full-screen dialog. */
+    private fun toggleFullscreen() {
+        if (fullscreen) exitFullscreen() else enterFullscreen()
+    }
+
+    private fun enterFullscreen() {
+        if (fullscreen) return
+        fullscreen = true
+        val root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
+        screenRoot = root
+        val dialog = Dialog(this).apply {
+            requestWindowFeature(Window.FEATURE_NO_TITLE)
+            setContentView(root)
+            window?.apply {
+                setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+                decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_FULLSCREEN or
+                    View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+            }
+            setOnDismissListener { _ -> if (fullscreen) restoreViews() }
+        }
+        fullscreenDialog = dialog
+        moveView(playerView, root, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        moveView(controlLayout, root, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
+        moveView(btnFullscreen, root, FrameLayout.LayoutParams(
+            dp(44), dp(44), Gravity.TOP or Gravity.START).apply { setMargins(dp(10), dp(10), dp(10), dp(10)) })
+        btnFullscreen.setImageResource(R.drawable.ic_fullscreen_exit)
+        dialog.show()
+    }
+
+    private fun exitFullscreen() {
+        if (!fullscreen) return
+        fullscreen = false
+        restoreViews()
+        fullscreenDialog?.dismiss()
+        btnFullscreen.setImageResource(R.drawable.ic_fullscreen)
+    }
+
+    private fun moveView(view: View, target: ViewGroup, params: ViewGroup.LayoutParams) {
+        val parent = view.parent as? ViewGroup ?: throw IllegalStateException("View not attached")
+        val index = parent.indexOfChild(view)
+        fullscreenSaved[view] = SavedSlot(parent, index, view.layoutParams)
+        parent.removeView(view)
+        target.addView(view, params)
+    }
+
+    private fun restoreViews() {
+        fullscreenSaved.forEach { (view, slot) ->
+            val host = view.parent as? ViewGroup
+            host?.removeView(view)
+            slot.parent.addView(view, slot.index, slot.params)
+        }
+        fullscreenSaved.clear()
+    }
+
+    override fun onBackPressed() {
+        if (fullscreen) {
+            exitFullscreen()
+        } else {
+            super.onBackPressed()
+        }
     }
 
     private fun setupControls() {
